@@ -14,6 +14,7 @@ export function AreaLink({
   return (
     <Link
       href={href}
+      prefetch={false}
       className="flex min-h-12 flex-col items-start gap-3 rounded-card border border-border bg-surface p-4 transition-colors hover:bg-surface-raised"
     >
       <IconCircle icon={icon} />

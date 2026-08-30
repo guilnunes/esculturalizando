@@ -14,7 +14,7 @@ npm install
 npm run dev
 ```
 
-Abra `http://localhost:3000`. A raiz redireciona para `/professor`; a home do
+Abra `http://localhost:3000`. A raiz leva ao painel do professor; a home do
 aluno fica em `/aluno`.
 
 Outros scripts: `npm run build`, `npm run typecheck`, `npm run lint`.
@@ -88,12 +88,29 @@ dois números rotulados, nunca somados.
 - Banco de dados, autenticação e gateway de pagamento
 - Regras de reposição e de cobrança, que são a parte complexa do produto
 - Telas de Produtos, Alunos, Calendário, Financeiro e Reposição — os `AreaLink`
-  já apontam para essas rotas, que ainda não existem e respondem 404
+  já apontam para essas rotas, que ainda não existem e respondem 404. O
+  prefetch do `Link` está desligado neles até passarem a existir, senão cada
+  visita dispara um 404 por atalho
 - Botões sem comportamento: "Pagar" e "Vou faltar" são visuais
 - `EmptyState` está pronto mas ainda não tem onde ser usado
 - Testes
 
-A raiz redireciona para `/professor` com um 307 temporário, configurado em
-`next.config.ts`. É temporário de propósito: quando existir autenticação, quem
-decide o destino é a sessão do usuário, e um 308 permanente ficaria cravado no
-cache dos navegadores.
+## Publicação
+
+O app é publicado no GitHub Pages a cada push em `main`, pelo workflow em
+`.github/workflows/deploy.yml`. O endereço é
+`https://guilnunes.github.io/esculturalizando/`.
+
+Isso obriga `output: "export"` em `next.config.ts` — o Pages serve arquivo
+estático e nada mais. Duas consequências que valem saber:
+
+- `basePath` vem de `NEXT_PUBLIC_BASE_PATH`, que o workflow preenche com o
+  caminho do projeto. Local, a variável fica vazia e o app roda na raiz.
+- Export estático não faz redirect de servidor. A raiz é uma página que manda
+  para o painel pelo roteador do cliente, em vez do 307 que um servidor Next
+  faria.
+
+Essa hospedagem tem prazo de validade. No momento em que entrar banco de dados,
+login ou pagamento, o app precisa de servidor e o Pages deixa de dar conta — a
+migração para Vercel (ou equivalente) vira obrigatória, e aí `output: "export"`,
+o `basePath` e a página de raiz saem juntos.
