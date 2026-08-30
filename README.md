@@ -7,104 +7,114 @@ pensada para o celular primeiro.
 
 No ar em **https://guilnunes.github.io/esculturalizando/**
 
+## Contas de demonstração
+
+| Papel | E-mail | Senha |
+|---|---|---|
+| Professor | `professor@atelie.test` | `demo1234` |
+| Aluna com mensalidade em atraso | `marina@atelie.test` | `demo1234` |
+| Aluna em dia | `heloisa@atelie.test` | `demo1234` |
+
+Todos os dezoito alunos usam a mesma senha. Os e-mails seguem o primeiro nome,
+em `@atelie.test`. **Antes de usar isso com gente de verdade**, troque as senhas,
+tire a dica de login do rodapé da tela de entrada e desligue o cadastro aberto
+nas configurações de Auth do Supabase.
+
 ## Como rodar
 
-Não há passo de instalação, nem build, nem dependências. Abra `index.html` no
-navegador, ou sirva a pasta com qualquer servidor estático:
+Não há instalação, dependência nem build. Sirva a pasta com qualquer servidor
+estático:
 
 ```bash
 python3 -m http.server 3000
 ```
 
+Abrir o `index.html` direto pelo `file://` não funciona: o `app.js` é um módulo
+ES, e módulo exige origem HTTP.
+
 ## Como é feito
 
-HTML, CSS e JavaScript puros. Sem framework, sem bundler, sem `node_modules`.
-São quatro arquivos:
+HTML, CSS e JavaScript puros no navegador; Postgres no Supabase por trás.
 
 ```
 index.html   estrutura e sprite de ícones
 styles.css   tokens do sistema visual e componentes
-app.js       dados, regras, telas e roteador
+api.js       acesso à API REST do Supabase, sem SDK
+app.js       telas, ações e roteador
 fonts/       Fraunces e Inter, subconjunto latino
+sql/         schema, regras, políticas e dados iniciais
 ```
 
-O roteamento é por hash (`#/professor`, `#/aluno/reposicao`), então o app
-funciona em qualquer servidor estático sem configuração de rotas. As telas são
-funções que devolvem HTML; qualquer ação altera o estado, grava e redesenha.
+Sem framework, sem bundler, sem `node_modules`. O acesso ao Supabase é `fetch`
+direto contra a API REST — nem o SDK oficial entra, para o app não depender de
+nenhum CDN em tempo de execução. As fontes também são servidas daqui.
+
+O roteamento é por hash (`#/professor`, `#/aluno/reposicao`), então funciona em
+qualquer servidor estático sem configuração de rotas.
 
 ## O que funciona
 
-O app é operável, não uma maquete. As ações mudam estado de verdade:
-
+- **Login** por e-mail e senha, com sessão renovada automaticamente
 - **Avisar falta** numa aula futura gera um crédito de reposição
 - **Marcar reposição** consome o crédito e ocupa uma vaga; cancelar devolve
-- **Pagar** quita a mensalidade e ela sai das pendências do professor
-- **Comprar material** baixa o estoque, que o professor vê na tela de produtos
-- **Trocar de aluno** no rodapé da tela do aluno, para ver o app por outros olhos
+- **Informar pagamento** avisa o ateliê; o professor confirma e a mensalidade
+  é quitada
+- **Comprar material** baixa o estoque, que o professor vê na hora
+- O professor vê tudo: pendências, ocupação das aulas, quem faltou, quem repõe
 
-Tudo isso vive no `localStorage` do navegador. É por aparelho e por navegador:
-o professor não vê num celular a falta que o aluno avisou em outro. O botão
-"Restaurar dados de exemplo", em duas etapas, devolve o estado inicial.
+Agora é um sistema, não mais um protótipo: dois aparelhos diferentes veem o
+mesmo estado. O que o aluno avisa no celular dele aparece no painel do professor.
 
-## Regras que eu inventei
+## As regras vivem no banco
 
-As regras reais de reposição e cobrança ainda não existem. Para o app funcionar
-agora, adotei o mínimo defensável — troque quando as de verdade estiverem
-definidas, em `app.js`, no objeto `acoes`:
+Isto é o ponto do projeto, e está em `sql/002_regras.sql`. As regras não são
+disciplina do JavaScript — são coisas que o Postgres recusa a gravar:
 
-- Falta avisada antes da aula vale um crédito de reposição. Não há prazo mínimo
-  de antecedência nem limite de créditos por mês.
-- O crédito vale em qualquer turma, desde que a aula tenha vaga de reposição.
-- Vagas regulares e vagas de reposição são limites independentes e nunca viram
-  um número só. Uma turma pode estar com as regulares esgotadas e ainda receber
-  reposição.
-- Mensalidade vence dia 10. Sem pagamento até lá, fica em atraso.
-- Pagar é simulado: marca como paga, sem gateway.
+- Vagas regulares e vagas de reposição são limites independentes. Uma turma
+  pode estar com as regulares esgotadas e ainda receber reposição.
+- Ninguém marca reposição sem crédito, em aula já passada, ou numa aula com as
+  vagas de reposição cheias.
+- Ninguém avisa falta em turma que não cursa (senão fabricaria créditos).
+- Ninguém desfaz um aviso de falta cujo crédito já foi gasto.
+- O preço de uma compra vem do catálogo, nunca do que o cliente enviou.
+- Estoque nunca fica negativo.
 
-As datas são calculadas a partir de hoje, então as próximas aulas e os
-vencimentos continuam fazendo sentido em qualquer dia que você abrir.
+O cliente é público: qualquer pessoa pode abrir o console e mandar o que
+quiser. Regra que só existe no JavaScript não é regra.
 
-## Sistema visual
+## Segurança
 
-Os tokens do guia são custom properties no `:root` de `styles.css`.
+Toda a separação entre um aluno e outro está nas políticas de Row Level
+Security, em `sql/003_politicas.sql`. A chave publicável do Supabase fica
+exposta no `api.js` — isso é o desenho, não descuido.
 
-- Tema escuro único, sem tema claro
-- Branco puro não aparece; o texto claro é sempre `--text` (#F2EAE6)
-- Nenhum `box-shadow`; profundidade vem do degrau `bg` → `surface` →
-  `surface-raised` e de bordas de 1px
-- Escala tipográfica fechada em 32/24/20/16/14/12
-- Fraunces só em título de tela e valor de destaque; Inter no resto; dinheiro
-  sempre com `tabular-nums`
-- Raios de 16px em cards, 12px em controles, total em chips; altura mínima de
-  48px em alvo de toque
-- Ícones desenhados a partir do Lucide, só contorno, traço 1.75
+Duas decisões que sustentam o resto:
 
-Vermelho não comunica atraso. A identidade inteira é avermelhada, então um
-alerta vermelho se dissolveria no cenário. Atraso se comunica por posição e
-peso — card no topo, fundo `surface-raised`, borda esquerda de 3px em `clay`,
-raio zero e valor em corpo grande. `danger` fica reservado para ação destrutiva,
-que hoje é só "Restaurar dados de exemplo" e "Cancelar reposição".
+**O aluno não tem nenhuma política de escrita em `mensalidades`.** Quitar a
+própria dívida seria uma escrita que a RLS não teria como negar, porque a linha
+é legitimamente dele. Por isso pagamento é declaração: o aluno insere em
+`pagamentos`, e só o professor pode confirmar. Sem gateway, é o mais honesto
+possível.
 
-Uma regra do guia foi dobrada de propósito: quando há mensalidade em atraso, o
-único botão primário da tela do aluno fica no card de atraso, e o da mensalidade
-a vencer passa a neutro. O guia colocava o primário sempre no card de
-mensalidade, mas isso deixaria o botão cheio na conta menos urgente. Continua
-valendo um primário por tela, e ele continua sendo de pagamento.
-
-As fontes são servidas do próprio repositório, em `fonts/`. Nenhuma requisição
-sai para terceiros.
+**As funções de regra moram no schema `regras`, não em `public`.** O PostgREST
+publica `public` inteiro como RPC em `/rest/v1/rpc/`, e nada daquilo é para ser
+chamado de fora. Os dois únicos RPCs públicos devolvem números agregados,
+nunca identidades.
 
 ## Publicação
 
 O workflow em `.github/workflows/deploy.yml` publica o repositório no GitHub
-Pages a cada push em `main`. Como não há build, ele só empacota os arquivos e
-manda — nenhum passo de compilação para quebrar.
+Pages a cada push em `main`. Como não há build, ele só empacota os arquivos.
 
 ## O que ficou de fora
 
-- Banco de dados, autenticação e gateway de pagamento. Sem servidor, o estado é
-  local ao navegador e não há login: a troca entre professor e aluno é livre.
-- Histórico. Só existem as próximas quatro aulas de cada turma e as mensalidades
-  do mês atual e do próximo.
-- Matrícula, criação de turma, cancelamento e mês de férias.
-- Testes automatizados.
+- **Gateway de pagamento.** Confirmar recebimento é manual. Cobrança de verdade
+  precisa de webhook num servidor — Edge Function do Supabase resolve, mas aí
+  entra Deno e a CLI.
+- **Cadastro de aluno pelo app.** Matrícula, criação de turma, cancelamento e
+  mês de férias ainda são trabalho de banco.
+- **Geração contínua de aulas.** O banco tem doze semanas à frente, criadas uma
+  vez. Um sistema de verdade geraria isso periodicamente.
+- **Proteção contra senha vazada** está desligada nas configurações de Auth.
+- **Testes automatizados.** As regras foram verificadas por SQL, trocando de
+  papel e tentando furá-las; o app, contra um dublê da API.
