@@ -38,6 +38,7 @@ HTML, CSS e JavaScript puros no navegador; Postgres no Supabase por trás.
 
 ```
 index.html   estrutura e sprite de ícones
+logo.svg     a marca do ateliê, também usada como favicon
 styles.css   tokens do sistema visual e componentes
 api.js       acesso à API REST do Supabase, sem SDK
 app.js       telas, ações e roteador

@@ -240,6 +240,7 @@ function linhaMensalidade(m, comAcao) {
 function telaEntrar(erro) {
   return (
     '<main class="entrada">' +
+    '<img class="marca" src="logo.svg" alt="" width="88" height="88">' +
     '<h1 class="screen-title" style="font-size:var(--display)">Esculturalizando</h1>' +
     '<p class="label muted" style="margin-top:8px">Entre para ver suas aulas e mensalidades.</p>' +
     '<form id="login" style="margin-top:24px">' +

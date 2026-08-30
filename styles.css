@@ -558,6 +558,14 @@ ul {
   flex: none;
 }
 
+.marca {
+  width: 88px;
+  height: 88px;
+  margin-bottom: 20px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border);
+}
+
 .entrada {
   display: flex;
   flex-direction: column;
