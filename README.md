@@ -14,8 +14,8 @@ npm install
 npm run dev
 ```
 
-Abra `http://localhost:3000`. A raiz tem dois links para alternar entre
-`/professor` e `/aluno`.
+Abra `http://localhost:3000`. A raiz redireciona para `/professor`; a home do
+aluno fica em `/aluno`.
 
 Outros scripts: `npm run build`, `npm run typecheck`, `npm run lint`.
 
@@ -30,7 +30,6 @@ lucide-react e as fontes Fraunces e Inter via `next/font`.
 app/
   globals.css        tokens do tema e camada base
   layout.tsx         fontes e metadados
-  page.tsx           raiz com os dois links
   aluno/page.tsx     home do aluno
   professor/page.tsx home do professor
 components/ui/       primitivas
@@ -93,3 +92,8 @@ dois números rotulados, nunca somados.
 - Botões sem comportamento: "Pagar" e "Vou faltar" são visuais
 - `EmptyState` está pronto mas ainda não tem onde ser usado
 - Testes
+
+A raiz redireciona para `/professor` com um 307 temporário, configurado em
+`next.config.ts`. É temporário de propósito: quando existir autenticação, quem
+decide o destino é a sessão do usuário, e um 308 permanente ficaria cravado no
+cache dos navegadores.
