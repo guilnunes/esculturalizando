@@ -39,6 +39,7 @@ HTML, CSS e JavaScript puros no navegador; Postgres no Supabase por trás.
 ```
 index.html   estrutura e sprite de ícones
 logo.svg     a marca do ateliê, também usada como favicon
+apple-touch-icon.png  a mesma marca em PNG, que é o que o iPhone aceita
 styles.css   tokens do sistema visual e componentes
 api.js       acesso à API REST do Supabase, sem SDK
 app.js       telas, ações e roteador
