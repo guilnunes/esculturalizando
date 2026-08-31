@@ -171,7 +171,8 @@ ul {
 
 .aba {
   flex: 1;
-  max-width: 120px;
+  /* cinco abas de 96px fecham os 480px da coluna de conteúdo */
+  max-width: 96px;
   min-height: 60px;
   display: flex;
   flex-direction: column;

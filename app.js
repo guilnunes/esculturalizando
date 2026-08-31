@@ -232,9 +232,9 @@ const dinheiro = (centavos, classe) =>
 
 const iconeCirculo = (nome) => '<span class="icon-circle">' + icone(nome, "icon--lg") + "</span>";
 
-// As quatro áreas do professor. A home não entra: dela se sai pela barra, e
-// volta-se pela seta do topo de cada área.
+// A home e as quatro áreas do professor, na ordem da barra do rodapé.
 const AREAS = [
+  ["#/professor", "home", "Início"],
   ["#/professor/produtos", "package", "Produtos"],
   ["#/professor/alunos", "users", "Alunos"],
   ["#/professor/calendario", "calendar-days", "Calendário"],
