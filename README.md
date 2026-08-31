@@ -61,6 +61,7 @@ qualquer servidor estático sem configuração de rotas.
 - **Informar pagamento** avisa o ateliê; o professor confirma e a mensalidade
   é quitada
 - **Comprar material** baixa o estoque, que o professor vê na hora
+- **O catálogo é do professor**: ele cria, edita e exclui produtos pelo app
 - O professor vê tudo: pendências, ocupação das aulas, quem faltou, quem repõe
 
 Agora é um sistema, não mais um protótipo: dois aparelhos diferentes veem o
@@ -79,6 +80,8 @@ disciplina do JavaScript — são coisas que o Postgres recusa a gravar:
 - Ninguém desfaz um aviso de falta cujo crédito já foi gasto.
 - O preço de uma compra vem do catálogo, nunca do que o cliente enviou.
 - Estoque nunca fica negativo.
+- Produto já vendido não se apaga: a compra guarda a referência, e a chave
+  estrangeira é `on delete restrict`.
 
 O cliente é público: qualquer pessoa pode abrir o console e mandar o que
 quiser. Regra que só existe no JavaScript não é regra.

@@ -358,6 +358,15 @@ ul {
   background: var(--border);
 }
 
+.btn--ghost {
+  color: var(--text-muted);
+}
+
+.btn--ghost:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
 .btn--destructive {
   color: var(--danger);
 }
@@ -409,6 +418,41 @@ ul {
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
+}
+
+/* ---------- produtos ---------- */
+
+.rows > li.produto,
+.rows > li.produto-painel {
+  flex-wrap: wrap;
+}
+
+.produto-barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-basis: 100%;
+}
+
+.produto-estoque,
+.produto-acoes {
+  display: flex;
+  gap: 8px;
+}
+
+.produto-acoes {
+  justify-content: flex-end;
+}
+
+.rows > li.produto-painel {
+  display: block;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.produto-painel .produto-acoes {
+  margin-top: 16px;
 }
 
 /* ---------- áreas e ocupação ---------- */

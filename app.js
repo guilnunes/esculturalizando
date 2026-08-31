@@ -34,6 +34,10 @@ let dados = null;
 let carregando = false;
 let rotaAnterior = null;
 
+// Painel aberto na tela de produtos: null, {modo:"novo"}, {modo:"editar",id}
+// ou {modo:"remover",id}. É estado de tela, não de dados — some ao trocar de rota.
+let painelProduto = null;
+
 const alvoApp = document.getElementById("app");
 const alvoToast = document.getElementById("toast");
 let timerToast = null;
@@ -133,6 +137,23 @@ const acoes = {
     tabela("compras").inserir({ aluno_id: dados.eu, produto_id: produtoId, quantidade: 1, valor_centavos: 0 })
       .then(() => "Compra registrada."),
 
+  "produto-novo": () => { painelProduto = { modo: "novo" }; return null; },
+  "produto-editar": (id) => { painelProduto = { modo: "editar", id: id }; return null; },
+  "produto-remover": (id) => { painelProduto = { modo: "remover", id: id }; return null; },
+  "produto-fechar": () => { painelProduto = null; return null; },
+
+  "produto-apagar": (id) =>
+    tabela("produtos").remover("id=eq." + id).then(
+      () => { painelProduto = null; return "Produto excluído."; },
+      (e) => {
+        // compras.produto_id é `on delete restrict`: histórico de venda segura o catálogo
+        if (/foreign key/i.test(e.message)) {
+          throw new Error("Esse produto já foi vendido: o histórico não deixa excluir.");
+        }
+        throw e;
+      },
+    ),
+
   "repor-estoque": (produtoId) => {
     const p = dados.produtos.find((x) => x.id === produtoId);
     return tabela("produtos").atualizar("id=eq." + produtoId, { estoque: p.estoque + 1 }).then(() => null);
@@ -146,6 +167,8 @@ const acoes = {
 
   sair: () => sair().then(() => { dados = null; location.hash = "#/entrar"; return null; }),
 };
+
+const acoesDeTela = new Set(["produto-novo", "produto-editar", "produto-remover", "produto-fechar"]);
 
 /* ------------------------------------------------------------ fragmentos --- */
 
@@ -177,7 +200,7 @@ const area = (rota, nomeIcone, rotulo) =>
 function botao(rotulo, variante, acao, alvo, extras) {
   const o = extras || {};
   return (
-    '<button class="btn btn--' + variante + (o.full ? " btn--full" : "") + (o.sm ? " btn--sm" : "") +
+    '<button type="button" class="btn btn--' + variante + (o.full ? " btn--full" : "") + (o.sm ? " btn--sm" : "") +
     '" data-acao="' + acao + '" data-alvo="' + esc(alvo) + '"' + (o.desabilitado ? " disabled" : "") + ">" +
     (o.icone ? icone(o.icone) : "") + esc(rotulo) + "</button>"
   );
@@ -290,18 +313,78 @@ function telaProfessor() {
   );
 }
 
+function formaProduto(p) {
+  const valor = (n) => ' value="' + esc(n) + '"';
+  return (
+    '<li class="produto-painel"><form data-forma="produto" data-alvo="' + esc(p ? p.id : "") + '">' +
+    '<p class="section-title">' + (p ? "Editar produto" : "Novo produto") + "</p>" +
+    '<label class="campo"><span class="micro muted">Nome</span>' +
+    '<input class="input" name="nome" maxlength="80" required autocomplete="off"' +
+    (p ? valor(p.nome) : "") + "></label>" +
+    '<div class="grid-2">' +
+    '<label class="campo"><span class="micro muted">Preço (R$)</span>' +
+    '<input class="input" name="preco" type="number" step="0.01" min="0" required' +
+    (p ? valor((p.preco_centavos / 100).toFixed(2)) : "") + "></label>" +
+    '<label class="campo"><span class="micro muted">Estoque</span>' +
+    '<input class="input" name="estoque" type="number" step="1" min="0" required' +
+    valor(p ? p.estoque : 0) + "></label>" +
+    "</div>" +
+    '<div class="produto-acoes">' +
+    '<button type="submit" class="btn btn--primary btn--sm">Salvar</button>' +
+    botao("Cancelar", "ghost", "produto-fechar", "", { sm: true }) +
+    "</div></form></li>"
+  );
+}
+
+function remocaoProduto(p) {
+  return (
+    '<li class="produto-painel">' +
+    '<p class="label">Excluir ' + esc(p.nome) + "?</p>" +
+    '<p class="micro muted" style="margin-top:4px">Sai do catálogo do ateliê e da vitrine dos alunos.</p>' +
+    '<div class="produto-acoes">' +
+    botao("Excluir", "destructive", "produto-apagar", p.id, { sm: true }) +
+    botao("Cancelar", "ghost", "produto-fechar", "", { sm: true }) +
+    "</div></li>"
+  );
+}
+
+function linhaProduto(p) {
+  return (
+    '<li class="produto">' +
+    '<span class="icon-circle">' + icone(p.estoque === 0 ? "package-x" : "package", "icon--lg") + "</span>" +
+    '<div class="row-main"><p class="row-name">' + esc(p.nome) + '</p><p class="micro muted">' +
+    reais(p.preco_centavos) + " · " + (p.estoque === 0 ? "sem estoque" : p.estoque + " em estoque") + "</p></div>" +
+    '<div class="produto-barra"><div class="produto-estoque">' +
+    botao("−", "neutral", "baixar-estoque", p.id, { sm: true, desabilitado: p.estoque === 0 }) +
+    botao("+", "neutral", "repor-estoque", p.id, { sm: true }) + "</div>" +
+    '<div class="produto-acoes">' +
+    botao("Editar", "ghost", "produto-editar", p.id, { sm: true }) +
+    botao("Excluir", "destructive", "produto-remover", p.id, { sm: true }) + "</div></div></li>"
+  );
+}
+
 function telaProdutosProfessor() {
+  const painel = painelProduto || {};
+  const itens = dados.produtos.map((p) =>
+    painel.id !== p.id
+      ? linhaProduto(p)
+      : painel.modo === "editar"
+        ? formaProduto(p)
+        : painel.modo === "remover"
+          ? remocaoProduto(p)
+          : linhaProduto(p)
+  );
+  if (painel.modo === "novo") itens.unshift(formaProduto(null));
+
   return (
     topo("Produtos", "professor") +
-    '<div class="card"><ul class="rows">' +
-    dados.produtos.map((p) =>
-      "<li>" + '<span class="icon-circle">' + icone(p.estoque === 0 ? "package-x" : "package", "icon--lg") + "</span>" +
-      '<div class="row-main"><p class="row-name">' + esc(p.nome) + '</p><p class="micro muted">' +
-      reais(p.preco_centavos) + " · " + (p.estoque === 0 ? "sem estoque" : p.estoque + " em estoque") + "</p></div>" +
-      '<div style="display:flex;gap:8px">' +
-      botao("−", "neutral", "baixar-estoque", p.id, { sm: true, desabilitado: p.estoque === 0 }) +
-      botao("+", "neutral", "repor-estoque", p.id, { sm: true }) + "</div></li>"
-    ).join("") + "</ul></div>"
+    (painel.modo === "novo"
+      ? ""
+      : '<p style="margin-bottom:16px">' +
+        botao("Novo produto", "secondary", "produto-novo", "", { full: true, icone: "circle-plus" }) + "</p>") +
+    (itens.length
+      ? '<div class="card"><ul class="rows">' + itens.join("") + "</ul></div>"
+      : vazio("package", "Catálogo vazio", "Cadastre o primeiro material para os alunos comprarem."))
   );
 }
 
@@ -446,14 +529,17 @@ function telaProdutosAluno() {
   const gasto = minhas.reduce((s, c) => s + c.valor_centavos, 0);
   return (
     topo("Produtos", "aluno") +
-    '<div class="card" style="margin-bottom:16px"><ul class="rows">' +
-    dados.produtos.map((p) =>
-      "<li>" + '<span class="icon-circle">' + icone(p.estoque === 0 ? "package-x" : "package", "icon--lg") + "</span>" +
-      '<div class="row-main"><p class="row-name">' + esc(p.nome) + '</p><p class="micro muted">' +
-      reais(p.preco_centavos) + (p.estoque === 0 ? " · sem estoque" : "") + "</p></div>" +
-      botao(p.estoque === 0 ? "Esgotado" : "Comprar", "neutral", "comprar", p.id, { sm: true, desabilitado: p.estoque === 0 }) +
-      "</li>"
-    ).join("") + "</ul></div>" +
+    (dados.produtos.length
+      ? '<div class="card" style="margin-bottom:16px"><ul class="rows">' +
+        dados.produtos.map((p) =>
+          "<li>" + '<span class="icon-circle">' + icone(p.estoque === 0 ? "package-x" : "package", "icon--lg") + "</span>" +
+          '<div class="row-main"><p class="row-name">' + esc(p.nome) + '</p><p class="micro muted">' +
+          reais(p.preco_centavos) + (p.estoque === 0 ? " · sem estoque" : "") + "</p></div>" +
+          botao(p.estoque === 0 ? "Esgotado" : "Comprar", "neutral", "comprar", p.id, { sm: true, desabilitado: p.estoque === 0 }) +
+          "</li>"
+        ).join("") + "</ul></div>"
+      : '<div style="margin-bottom:16px">' +
+        vazio("package", "Nada à venda", "O ateliê ainda não pôs material no catálogo.") + "</div>") +
     (minhas.length
       ? '<div class="card card--raised"><p class="label muted">Suas compras</p>' + dinheiro(gasto, "money--mid") +
         '<p class="micro muted" style="margin-top:4px">' + minhas.length +
@@ -564,8 +650,10 @@ async function render(erroLogin) {
     return;
   }
 
+  const trocou = rota !== rotaAnterior;
+  if (trocou) painelProduto = null;
   alvoApp.innerHTML = ROTAS[rota]() + rodape();
-  if (rota !== rotaAnterior) {
+  if (trocou) {
     rotaAnterior = rota;
     window.scrollTo(0, 0);
   }
@@ -603,11 +691,43 @@ alvoApp.addEventListener("click", async (ev) => {
       await render();
       return;
     }
-    dados = null;
+    if (!acoesDeTela.has(gatilho.dataset.acao)) dados = null;
     await render();
     if (recado) aviso(recado);
   } catch (e) {
     gatilho.disabled = false;
+    aviso(e.message);
+  }
+});
+
+alvoApp.addEventListener("submit", async (ev) => {
+  const forma = ev.target;
+  if (!forma.matches('form[data-forma="produto"]')) return;
+  ev.preventDefault();
+
+  const campos = {
+    nome: forma.elements.nome.value.trim(),
+    preco_centavos: Math.round(Number(forma.elements.preco.value) * 100),
+    estoque: Number(forma.elements.estoque.value),
+  };
+  if (!campos.nome || !Number.isInteger(campos.preco_centavos) || campos.preco_centavos < 0 ||
+      !Number.isInteger(campos.estoque) || campos.estoque < 0) {
+    aviso("Confira o nome, o preço e o estoque.");
+    return;
+  }
+
+  const id = forma.dataset.alvo;
+  const salvar = forma.querySelector('button[type="submit"]');
+  salvar.disabled = true;
+  try {
+    if (id) await tabela("produtos").atualizar("id=eq." + id, campos);
+    else await tabela("produtos").inserir(campos);
+    painelProduto = null;
+    dados = null;
+    await render();
+    aviso(id ? "Produto atualizado." : "Produto criado.");
+  } catch (e) {
+    salvar.disabled = false;
     aviso(e.message);
   }
 });
