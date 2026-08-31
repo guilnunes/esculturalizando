@@ -427,6 +427,89 @@ ul {
   flex-wrap: wrap;
 }
 
+.produto-toque {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+}
+
+.produto-toque .row-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.produto-toque .row-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon--seta {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.15s, stroke 0.15s;
+}
+
+.produto-toque:hover .icon--seta {
+  stroke: var(--clay);
+}
+
+.produto--aberto .icon--seta {
+  transform: rotate(180deg);
+  stroke: var(--clay);
+}
+
+/* a gaveta de vendas é do produto logo acima, e o fundo diz isso */
+.rows > li.produto-painel--gaveta {
+  background: var(--surface-raised);
+  margin: 0 -16px;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.rows > li.venda {
+  flex-wrap: wrap;
+}
+
+.venda-acoes {
+  display: flex;
+  justify-content: flex-end;
+  flex-basis: 100%;
+}
+
+.rows > li.venda--painel {
+  display: block;
+}
+
+.produto-painel select.input,
+.venda--painel select.input {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 40px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon--seta {
+    transition: none;
+  }
+}
+
 .produto-barra {
   display: flex;
   align-items: center;

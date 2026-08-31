@@ -62,6 +62,8 @@ qualquer servidor estático sem configuração de rotas.
   é quitada
 - **Comprar material** baixa o estoque, que o professor vê na hora
 - **O catálogo é do professor**: ele cria, edita e exclui produtos pelo app
+- **Cada produto guarda seu histórico de vendas**: tocar no item abre quem
+  comprou, quando, quanto e por onde pagou; o professor dá baixa ali mesmo
 - O professor vê tudo: pendências, ocupação das aulas, quem faltou, quem repõe
 
 Agora é um sistema, não mais um protótipo: dois aparelhos diferentes veem o
@@ -82,6 +84,10 @@ disciplina do JavaScript — são coisas que o Postgres recusa a gravar:
 - Estoque nunca fica negativo.
 - Produto já vendido não se apaga: a compra guarda a referência, e a chave
   estrangeira é `on delete restrict`.
+- Ninguém compra já pago: a política de INSERT em `compras` recusa a linha que
+  nasce quitada, e só o professor tem política de UPDATE ali.
+- Venda quitada tem forma de pagamento, e forma de pagamento só existe em venda
+  quitada — as duas colunas andam juntas ou o check recusa.
 
 O cliente é público: qualquer pessoa pode abrir o console e mandar o que
 quiser. Regra que só existe no JavaScript não é regra.

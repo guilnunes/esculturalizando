@@ -98,6 +98,20 @@ const minhaTurma = () => {
   return m ? dados.turmaPorId[m.turma_id] : null;
 };
 
+const FORMAS = {
+  pix: "Pix",
+  dinheiro: "Dinheiro",
+  debito: "Cartão de débito",
+  credito: "Cartão de crédito",
+  boleto: "Boleto",
+};
+
+// Mesma régua da mensalidade: quitada, vencida ou ainda no prazo.
+function statusCompra(c) {
+  if (c.pago_em) return "pago";
+  return c.vencimento < isoHoje() ? "atrasado" : "aberto";
+}
+
 function statusDe(m) {
   if (m.pago_em) return "pago";
   return m.vencimento < isoHoje() ? "atrasado" : "aberto";
@@ -136,12 +150,32 @@ const acoes = {
 
   comprar: (produtoId) =>
     tabela("compras").inserir({ aluno_id: dados.eu, produto_id: produtoId, quantidade: 1, valor_centavos: 0 })
-      .then(() => "Compra registrada."),
+      .then(() => "Compra registrada. Combine o pagamento com o ateliê."),
 
   "produto-novo": () => { painelProduto = { modo: "novo" }; return null; },
   "produto-editar": (id) => { painelProduto = { modo: "editar", id: id }; return null; },
   "produto-remover": (id) => { painelProduto = { modo: "remover", id: id }; return null; },
   "produto-fechar": () => { painelProduto = null; return null; },
+
+  "produto-vendas": (id) => {
+    const aberto = painelProduto && painelProduto.modo === "vendas" && painelProduto.id === id;
+    painelProduto = aberto ? null : { modo: "vendas", id: id };
+    return null;
+  },
+  "venda-receber": (compraId) => {
+    painelProduto = { modo: "vendas", id: painelProduto.id, recebendo: compraId };
+    return null;
+  },
+  "venda-fechar": () => {
+    painelProduto = { modo: "vendas", id: painelProduto.id };
+    return null;
+  },
+
+  "venda-desfazer": (compraId) => {
+    const aberto = { modo: "vendas", id: painelProduto.id };
+    return tabela("compras").atualizar("id=eq." + compraId, { pago_em: null, forma_pagamento: null })
+      .then(() => { painelProduto = aberto; return "Recebimento desfeito."; });
+  },
 
   "produto-apagar": (id) =>
     tabela("produtos").remover("id=eq." + id).then(
@@ -169,7 +203,10 @@ const acoes = {
   sair: () => sair().then(() => { dados = null; location.hash = "#/entrar"; return null; }),
 };
 
-const acoesDeTela = new Set(["produto-novo", "produto-editar", "produto-remover", "produto-fechar"]);
+const acoesDeTela = new Set([
+  "produto-novo", "produto-editar", "produto-remover", "produto-fechar",
+  "produto-vendas", "venda-receber", "venda-fechar",
+]);
 
 /* ------------------------------------------------------------ fragmentos --- */
 
@@ -349,22 +386,85 @@ function remocaoProduto(p) {
   );
 }
 
+function linhaVenda(c) {
+  const st = statusCompra(c);
+  const quem = nomeDe(c.aluno_id);
+  const chip =
+    st === "pago" ? '<span class="chip chip--ok">' + icone("check", "icon--sm icon--ok") + "recebido</span>"
+    : st === "atrasado" ? '<span class="chip chip--atraso">' + icone("alert-circle", "icon--sm") + "em atraso</span>"
+    : '<span class="chip">em aberto</span>';
+
+  return (
+    '<li class="venda">' + avatar(quem, true) +
+    '<div class="row-main"><p class="row-name">' + esc(quem) + '</p><p class="micro muted">' +
+    dataCurta(c.criada_em) + (c.quantidade > 1 ? " · " + c.quantidade + " unidades" : "") +
+    (st === "pago" ? " · " + esc(FORMAS[c.forma_pagamento] || "forma não registrada") : "") + "</p></div>" +
+    '<div class="row-side"><span class="money label">' + reais(c.valor_centavos) + "</span>" + chip + "</div>" +
+    '<div class="venda-acoes">' +
+    (st === "pago"
+      ? botao("Desfazer", "ghost", "venda-desfazer", c.id, { sm: true })
+      : botao("Receber", "secondary", "venda-receber", c.id, { sm: true })) +
+    "</div></li>"
+  );
+}
+
+function formaRecebimento(c) {
+  return (
+    '<li class="venda venda--painel"><form data-forma="recebimento" data-alvo="' + esc(c.id) + '">' +
+    '<p class="section-title">Receber de ' + esc(nomeDe(c.aluno_id)) + "</p>" +
+    '<p class="micro muted" style="margin-top:4px">' + reais(c.valor_centavos) + " · comprado em " +
+    dataCurta(c.criada_em) + "</p>" +
+    '<label class="campo"><span class="micro muted">Como o aluno pagou</span>' +
+    '<select class="input" name="forma" required>' +
+    Object.keys(FORMAS).map((k) => '<option value="' + k + '">' + esc(FORMAS[k]) + "</option>").join("") +
+    "</select></label>" +
+    '<div class="produto-acoes">' +
+    '<button type="submit" class="btn btn--primary btn--sm">Confirmar</button>' +
+    botao("Cancelar", "ghost", "venda-fechar", "", { sm: true }) +
+    "</div></form></li>"
+  );
+}
+
+function vendasProduto(p) {
+  const vendas = dados.compras.filter((c) => c.produto_id === p.id);
+  const devendo = vendas.filter((c) => !c.pago_em).reduce((s, c) => s + c.valor_centavos, 0);
+  const recebendo = painelProduto.recebendo;
+
+  return (
+    '<li class="produto-painel produto-painel--gaveta">' +
+    '<div class="section-head"><h3 class="section-title">Histórico de vendas</h3>' +
+    (devendo ? '<p class="micro chip--atraso" style="background:none">' + reais(devendo) + " a receber</p>" : "") +
+    "</div>" +
+    (vendas.length
+      ? '<ul class="rows">' +
+        vendas.map((c) => (recebendo === c.id ? formaRecebimento(c) : linhaVenda(c))).join("") + "</ul>"
+      : '<p class="micro muted">Nenhuma venda ainda.</p>') +
+    "</li>"
+  );
+}
+
 function linhaProduto(p) {
   const vendidos = dados.compras
     .filter((c) => c.produto_id === p.id)
     .reduce((s, c) => s + c.quantidade, 0);
+  const aberto = painelProduto && painelProduto.modo === "vendas" && painelProduto.id === p.id;
+
   return (
-    '<li class="produto">' +
+    '<li class="produto' + (aberto ? " produto--aberto" : "") + '">' +
+    '<button type="button" class="produto-toque" data-acao="produto-vendas" data-alvo="' + esc(p.id) +
+    '" aria-expanded="' + aberto + '">' +
     '<span class="icon-circle">' + icone(p.estoque === 0 ? "package-x" : "package", "icon--lg") + "</span>" +
-    '<div class="row-main"><p class="row-name">' + esc(p.nome) + '</p><p class="micro muted">' +
+    '<span class="row-main"><span class="row-name">' + esc(p.nome) + '</span><span class="micro muted">' +
     reais(p.preco_centavos) + " · " + (p.estoque === 0 ? "sem estoque" : p.estoque + " em estoque") +
-    (vendidos ? " · " + vendidos + (vendidos === 1 ? " vendido" : " vendidos") : "") + "</p></div>" +
+    (vendidos ? " · " + vendidos + (vendidos === 1 ? " vendido" : " vendidos") : "") + "</span></span>" +
+    icone("chevron-down", "icon--seta") + "</button>" +
     '<div class="produto-barra"><div class="produto-estoque">' +
     botao("−", "neutral", "baixar-estoque", p.id, { sm: true, desabilitado: p.estoque === 0 }) +
     botao("+", "neutral", "repor-estoque", p.id, { sm: true }) + "</div>" +
     '<div class="produto-acoes">' +
     botao("Editar", "ghost", "produto-editar", p.id, { sm: true }) +
-    botao("Excluir", "destructive", "produto-remover", p.id, { sm: true }) + "</div></div></li>"
+    botao("Excluir", "destructive", "produto-remover", p.id, { sm: true }) + "</div></div></li>" +
+    (aberto ? vendasProduto(p) : "")
   );
 }
 
@@ -532,6 +632,7 @@ function telaAluno() {
 function telaProdutosAluno() {
   const minhas = dados.compras.filter((c) => c.aluno_id === dados.eu);
   const gasto = minhas.reduce((s, c) => s + c.valor_centavos, 0);
+  const devendo = minhas.filter((c) => !c.pago_em).reduce((s, c) => s + c.valor_centavos, 0);
   return (
     topo("Produtos", "aluno") +
     (dados.produtos.length
@@ -547,15 +648,23 @@ function telaProdutosAluno() {
         vazio("package", "Nada à venda", "O ateliê ainda não pôs material no catálogo.") + "</div>") +
     (minhas.length
       ? '<section><div class="section-head"><h2 class="section-title">Suas compras</h2>' +
-        '<p class="micro muted">' + reais(gasto) + " no total</p></div>" +
+        '<p class="micro ' + (devendo ? "chip--atraso" : "muted") + '" style="background:none">' +
+        (devendo ? reais(devendo) + " a pagar" : reais(gasto) + " no total") + "</p></div>" +
         '<div class="card"><ul class="rows">' +
         minhas.map((c) => {
           const p = dados.produtoPorId[c.produto_id];
+          const st = statusCompra(c);
           return "<li>" + iconeCirculo("package") +
             '<div class="row-main"><p class="row-name">' + esc(p ? p.nome : "Produto do catálogo") +
             '</p><p class="micro muted">' + dataCurta(c.criada_em) +
             (c.quantidade > 1 ? " · " + c.quantidade + " unidades" : "") + "</p></div>" +
-            '<span class="money label">' + reais(c.valor_centavos) + "</span></li>";
+            '<div class="row-side"><span class="money label">' + reais(c.valor_centavos) + "</span>" +
+            (st === "pago"
+              ? '<span class="chip chip--ok">' + icone("check", "icon--sm icon--ok") + "pago</span>"
+              : st === "atrasado"
+                ? '<span class="chip chip--atraso">' + icone("alert-circle", "icon--sm") + "em atraso</span>"
+                : '<span class="chip">a pagar</span>') +
+            "</div></li>";
         }).join("") + "</ul></div></section>"
       : "")
   );
@@ -715,6 +824,16 @@ alvoApp.addEventListener("click", async (ev) => {
 
 alvoApp.addEventListener("submit", async (ev) => {
   const forma = ev.target;
+  if (forma.matches('form[data-forma="recebimento"]')) {
+    ev.preventDefault();
+    // o professor está lendo o histórico: registrar não pode fechar o painel
+    const aberto = { modo: "vendas", id: painelProduto.id };
+    return salvar(forma, () =>
+      tabela("compras").atualizar("id=eq." + forma.dataset.alvo, {
+        pago_em: new Date().toISOString(),
+        forma_pagamento: forma.elements.forma.value,
+      }), "Recebimento registrado.", aberto);
+  }
   if (!forma.matches('form[data-forma="produto"]')) return;
   ev.preventDefault();
 
@@ -730,20 +849,26 @@ alvoApp.addEventListener("submit", async (ev) => {
   }
 
   const id = forma.dataset.alvo;
-  const salvar = forma.querySelector('button[type="submit"]');
-  salvar.disabled = true;
+  return salvar(forma, () =>
+    id ? tabela("produtos").atualizar("id=eq." + id, campos) : tabela("produtos").inserir(campos),
+    id ? "Produto atualizado." : "Produto criado.");
+});
+
+// Todo formulário faz o mesmo: tranca o botão, grava, fecha o painel e recarrega.
+async function salvar(forma, gravar, recado, painelDepois) {
+  const botaoSalvar = forma.querySelector('button[type="submit"]');
+  botaoSalvar.disabled = true;
   try {
-    if (id) await tabela("produtos").atualizar("id=eq." + id, campos);
-    else await tabela("produtos").inserir(campos);
-    painelProduto = null;
+    await gravar();
+    painelProduto = painelDepois || null;
     dados = null;
     await render();
-    aviso(id ? "Produto atualizado." : "Produto criado.");
+    aviso(recado);
   } catch (e) {
-    salvar.disabled = false;
+    botaoSalvar.disabled = false;
     aviso(e.message);
   }
-});
+}
 
 window.addEventListener("hashchange", () => render());
 
