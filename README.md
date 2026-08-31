@@ -56,6 +56,11 @@ qualquer servidor estático sem configuração de rotas.
 ## O que funciona
 
 - **Login** por e-mail e senha, com sessão renovada automaticamente
+- **Cadastro por dois caminhos**: a pessoa se cadastra e escolhe a turma, ou o
+  professor a cadastra pelo app; quando ela cria a conta depois, o perfil que já
+  existia é reivindicado pelo e-mail em vez de virar um segundo aluno
+- **CRUD de alunos** com nome, telefone, e-mail e turmas; quem sai de todas as
+  turmas vira ex-aluno e continua no histórico
 - **Avisar falta** numa aula futura gera um crédito de reposição
 - **Marcar reposição** consome o crédito e ocupa uma vaga; cancelar devolve
 - **Informar pagamento** avisa o ateliê; o professor confirma e a mensalidade
@@ -82,6 +87,8 @@ disciplina do JavaScript — são coisas que o Postgres recusa a gravar:
 - Ninguém desfaz um aviso de falta cujo crédito já foi gasto.
 - O preço de uma compra vem do catálogo, nunca do que o cliente enviou.
 - Estoque nunca fica negativo.
+- Um aluno nasce em pelo menos uma turma: perfil e matrícula entram na mesma
+  transação, e turma cheia derruba o cadastro inteiro sem deixar perfil órfão.
 - Produto já vendido não se apaga: a compra guarda a referência, e a chave
   estrangeira é `on delete restrict`.
 - Ninguém compra já pago: a política de INSERT em `compras` recusa a linha que
@@ -121,8 +128,8 @@ Pages a cada push em `main`. Como não há build, ele só empacota os arquivos.
 - **Gateway de pagamento.** Confirmar recebimento é manual. Cobrança de verdade
   precisa de webhook num servidor — Edge Function do Supabase resolve, mas aí
   entra Deno e a CLI.
-- **Cadastro de aluno pelo app.** Matrícula, criação de turma, cancelamento e
-  mês de férias ainda são trabalho de banco.
+- **Criação de turma, cancelamento e mês de férias** ainda são trabalho de
+  banco. Aluno e matrícula já se fazem pelo app.
 - **Geração contínua de aulas.** O banco tem doze semanas à frente, criadas uma
   vez. Um sistema de verdade geraria isso periodicamente.
 - **Proteção contra senha vazada** está desligada nas configurações de Auth.

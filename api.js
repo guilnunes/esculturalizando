@@ -111,6 +111,19 @@ export async function entrar(email, senha) {
   return nova;
 }
 
+// O nome, o telefone e as turmas escolhidas viajam como metadado do usuário;
+// quem os lê é o gatilho cria_perfil, que monta o perfil e as matrículas. O
+// papel não vai junto de propósito: quem se cadastra aqui entra como aluno.
+export async function cadastrar(email, senha, extras) {
+  const nova = await chamar(
+    "/auth/v1/signup",
+    { method: "POST", body: JSON.stringify({ email: email, password: senha, data: extras }) },
+    false,
+  );
+  if (nova && nova.access_token) guardar(nova);
+  return nova;
+}
+
 export async function sair() {
   try {
     if (temSessao()) await chamar("/auth/v1/logout", { method: "POST" }, false);

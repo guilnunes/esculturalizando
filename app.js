@@ -1,4 +1,4 @@
-import { entrar, sair, temSessao, usuarioId, tabela, rpc } from "./api.js";
+import { entrar, cadastrar, sair, temSessao, usuarioId, tabela, rpc } from "./api.js";
 
 /* ---------------------------------------------------------------- datas --- */
 
@@ -34,9 +34,14 @@ let dados = null;
 let carregando = false;
 let rotaAnterior = null;
 
-// Painel aberto na tela de produtos: null, {modo:"novo"}, {modo:"editar",id}
-// ou {modo:"remover",id}. É estado de tela, não de dados — some ao trocar de rota.
+// Painéis abertos nas telas de produtos e de alunos. É estado de tela, não de
+// dados: some ao trocar de rota, e as ações que só abrem e fecham painel não
+// invalidam o cache.
 let painelProduto = null;
+let painelAluno = null;
+
+// As turmas que a tela de cadastro mostra a quem ainda não tem conta.
+let turmasAbertas = [];
 
 const alvoApp = document.getElementById("app");
 const alvoToast = document.getElementById("toast");
@@ -50,12 +55,12 @@ function aviso(texto) {
 }
 
 async function carregar() {
-  const eu = usuarioId();
+  const conta = usuarioId();
   const [perfis, turmas, matriculas, aulas, faltas, reposicoes, mensalidades, pagamentos, produtos, compras, ocupacao, creditos] =
     await Promise.all([
       tabela("perfis").ler("select=*&order=nome"),
       tabela("turmas").ler("select=*&order=nome"),
-      tabela("matriculas").ler("select=*&ativa=is.true"),
+      tabela("matriculas").ler("select=*"),
       tabela("aulas").ler("select=*&order=data"),
       tabela("faltas").ler("select=*"),
       tabela("reposicoes").ler("select=*"),
@@ -69,14 +74,20 @@ async function carregar() {
 
   const porId = (lista) => Object.fromEntries(lista.map((x) => [x.id, x]));
 
+  // auth.uid() é a conta; o perfil tem identidade própria desde que o professor
+  // passou a cadastrar aluno sem criar login. Quem manda no app é o perfil.
+  const perfil = perfis.find((p) => p.usuario_id === conta) || null;
+
   dados = {
-    eu,
-    perfil: perfis.find((p) => p.id === eu) || null,
+    conta,
+    eu: perfil ? perfil.id : null,
+    perfil,
     perfis,
     perfilPorId: porId(perfis),
     turmas,
     turmaPorId: porId(turmas),
-    matriculas,
+    matriculas: matriculas.filter((m) => m.ativa),
+    matriculasTodas: matriculas,
     aulas,
     aulaPorId: porId(aulas),
     faltas,
@@ -152,6 +163,15 @@ const acoes = {
     tabela("compras").inserir({ aluno_id: dados.eu, produto_id: produtoId, quantidade: 1, valor_centavos: 0 })
       .then(() => "Compra registrada. Combine o pagamento com o ateliê."),
 
+  "aluno-novo": () => { painelAluno = { modo: "novo" }; return null; },
+  "aluno-editar": (id) => { painelAluno = { modo: "editar", id: id }; return null; },
+  "aluno-fechar": () => { painelAluno = null; return null; },
+  "aluno-ficha": (id) => {
+    const aberto = painelAluno && painelAluno.modo === "ficha" && painelAluno.id === id;
+    painelAluno = aberto ? null : { modo: "ficha", id: id };
+    return null;
+  },
+
   "produto-novo": () => { painelProduto = { modo: "novo" }; return null; },
   "produto-editar": (id) => { painelProduto = { modo: "editar", id: id }; return null; },
   "produto-remover": (id) => { painelProduto = { modo: "remover", id: id }; return null; },
@@ -206,6 +226,7 @@ const acoes = {
 const acoesDeTela = new Set([
   "produto-novo", "produto-editar", "produto-remover", "produto-fechar",
   "produto-vendas", "venda-receber", "venda-fechar",
+  "aluno-novo", "aluno-editar", "aluno-fechar", "aluno-ficha",
 ]);
 
 /* ------------------------------------------------------------ fragmentos --- */
@@ -329,7 +350,47 @@ function telaEntrar(erro) {
     (erro ? '<p class="label" style="color:var(--danger);margin-top:12px">' + esc(erro) + "</p>" : "") +
     '<button class="btn btn--primary btn--full" style="margin-top:16px" type="submit">Entrar</button>' +
     "</form>" +
-    '<p class="micro faint" style="margin-top:24px">Demonstração: professor@atelie.test ou marina@atelie.test, senha demo1234</p>' +
+    '<p class="label muted" style="margin-top:24px">Ainda não tem conta? ' +
+    '<a href="#/cadastro">Cadastre-se</a></p>' +
+    '<p class="micro faint" style="margin-top:16px">Demonstração: professor@atelie.test ou marina@atelie.test, senha demo1234</p>' +
+    "</main>"
+  );
+}
+
+// A turma vem de `turmas_abertas`, uma view que quem ainda não tem conta pode
+// ler: só nome, dia, horário e vagas — o preço não é assunto de quem está do
+// lado de fora.
+function telaCadastro(erro) {
+  return (
+    '<main class="entrada">' +
+    '<img class="marca" src="logo.svg" alt="" width="72" height="72">' +
+    '<h1 class="screen-title">Criar conta</h1>' +
+    '<p class="label muted" style="margin-top:8px">Escolha a turma que você vai frequentar.</p>' +
+    '<form id="cadastro" style="margin-top:24px">' +
+    '<label class="campo"><span class="micro muted">Nome completo</span>' +
+    '<input class="input" name="nome" maxlength="120" required autocomplete="name"></label>' +
+    '<label class="campo"><span class="micro muted">Telefone celular</span>' +
+    '<input class="input" name="telefone" type="tel" maxlength="32" autocomplete="tel"></label>' +
+    '<label class="campo"><span class="micro muted">E-mail</span>' +
+    '<input class="input" name="email" type="email" required autocomplete="email"></label>' +
+    '<label class="campo"><span class="micro muted">Senha</span>' +
+    '<input class="input" name="senha" type="password" minlength="8" required autocomplete="new-password"></label>' +
+    '<fieldset class="campo turmas"><legend class="micro muted">Turmas</legend>' +
+    (turmasAbertas.length
+      ? turmasAbertas.map((t) =>
+          '<label class="turma-opcao"><input type="checkbox" name="turmas" value="' + esc(t.id) + '"' +
+          (t.vagas_livres > 0 ? "" : " disabled") + ">" +
+          '<span class="turma-nome">' + esc(t.nome) + '<span class="micro muted"> · ' +
+          esc(t.horario) + " · " +
+          (t.vagas_livres > 0 ? t.vagas_livres + (t.vagas_livres === 1 ? " vaga" : " vagas") : "sem vaga") +
+          "</span></span></label>"
+        ).join("")
+      : '<p class="micro muted">Nenhuma turma cadastrada ainda.</p>') +
+    "</fieldset>" +
+    (erro ? '<p class="label" style="color:var(--danger);margin-top:12px">' + esc(erro) + "</p>" : "") +
+    '<button class="btn btn--primary btn--full" style="margin-top:16px" type="submit">Criar conta</button>' +
+    "</form>" +
+    '<p class="label muted" style="margin-top:24px">Já tem conta? <a href="#/entrar">Entrar</a></p>' +
     "</main>"
   );
 }
@@ -504,37 +565,160 @@ function telaProdutosProfessor() {
   );
 }
 
-function telaAlunosProfessor() {
+// Turmas ativas de um aluno, e o histórico completo (que inclui de onde saiu).
+const turmasDe = (alunoId) =>
+  dados.matriculas.filter((m) => m.aluno_id === alunoId).map((m) => dados.turmaPorId[m.turma_id]).filter(Boolean);
+
+const creditosDe = (alunoId) =>
+  dados.faltas.filter((f) => f.aluno_id === alunoId).length -
+  dados.reposicoes.filter((r) => r.aluno_id === alunoId).length;
+
+const ocupadasEm = (turmaId) => dados.matriculas.filter((m) => m.turma_id === turmaId).length;
+
+function fichaAluno(a) {
+  const turmas = turmasDe(a.id);
+  const cred = creditosDe(a.id);
+  const linha = (rotulo, valor) =>
+    '<li><span class="micro faint ficha-rotulo">' + rotulo + "</span>" +
+    '<span class="ficha-valor">' + valor + "</span></li>";
+
+  return (
+    '<li class="produto-painel produto-painel--gaveta">' +
+    '<ul class="ficha">' +
+    linha("Turmas", turmas.length
+      ? turmas.map((t) => esc(t.nome)).join("<br>")
+      : '<span class="muted">Nenhuma — saiu do ateliê</span>') +
+    linha("Telefone", a.telefone ? esc(a.telefone) : '<span class="muted">não informado</span>') +
+    linha("E-mail", a.email ? esc(a.email) : '<span class="muted">não informado</span>') +
+    linha("Conta no app", a.usuario_id
+      ? '<span class="inline-note">' + icone("check", "icon--sm icon--ok") + "criada</span>"
+      : '<span class="muted">ainda não se cadastrou</span>') +
+    (cred > 0 ? linha("Reposição", cred + (cred === 1 ? " crédito" : " créditos")) : "") +
+    "</ul>" +
+    '<div class="produto-acoes">' +
+    botao("Editar", "secondary", "aluno-editar", a.id, { sm: true }) +
+    botao("Fechar", "ghost", "aluno-fechar", "", { sm: true }) +
+    "</div></li>"
+  );
+}
+
+function formaAluno(a) {
+  const marcadas = a ? turmasDe(a.id).map((t) => t.id) : [];
+  const valor = (v) => ' value="' + esc(v) + '"';
+
+  return (
+    '<li class="produto-painel"><form data-forma="aluno" data-alvo="' + esc(a ? a.id : "") + '">' +
+    '<p class="section-title">' + (a ? "Editar aluno" : "Novo aluno") + "</p>" +
+    '<label class="campo"><span class="micro muted">Nome completo</span>' +
+    '<input class="input" name="nome" maxlength="120" required autocomplete="off"' +
+    (a ? valor(a.nome) : "") + "></label>" +
+    '<label class="campo"><span class="micro muted">Telefone celular</span>' +
+    '<input class="input" name="telefone" type="tel" maxlength="32" autocomplete="off"' +
+    (a && a.telefone ? valor(a.telefone) : "") + "></label>" +
+    '<label class="campo"><span class="micro muted">E-mail</span>' +
+    '<input class="input" name="email" type="email" maxlength="120" autocomplete="off"' +
+    (a && a.email ? valor(a.email) : "") + "></label>" +
+    '<fieldset class="campo turmas"><legend class="micro muted">Turmas</legend>' +
+    dados.turmas.map((t) => {
+      const marcada = marcadas.includes(t.id);
+      const livres = t.vagas_regulares - ocupadasEm(t.id);
+      return (
+        '<label class="turma-opcao"><input type="checkbox" name="turmas" value="' + esc(t.id) + '"' +
+        (marcada ? " checked" : "") + ">" +
+        '<span class="turma-nome">' + esc(t.nome) + '<span class="micro muted"> · ' +
+        (marcada ? "matriculado" : livres > 0 ? livres + (livres === 1 ? " vaga" : " vagas") : "sem vaga") +
+        "</span></span></label>"
+      );
+    }).join("") +
+    (a
+      ? '<p class="micro faint" style="margin-top:8px">Desmarcar todas faz dele um ex-aluno: sai das turmas e continua no histórico.</p>'
+      : '<p class="micro faint" style="margin-top:8px">Um aluno nasce em pelo menos uma turma.</p>') +
+    "</fieldset>" +
+    '<div class="produto-acoes">' +
+    '<button type="submit" class="btn btn--primary btn--sm">Salvar</button>' +
+    botao("Cancelar", "ghost", "aluno-fechar", "", { sm: true }) +
+    "</div></form></li>"
+  );
+}
+
+// `podeAbrir` existe porque um aluno de duas turmas aparece nas duas seções: sem
+// isso a ficha e o formulário sairiam duplicados, e editar num deixaria o outro
+// mostrando dado velho. Só a primeira aparição carrega o painel.
+function linhaAluno(a, exAluno, podeAbrir, turmaDaSecao) {
+  const painel = painelAluno || {};
+  const aberto = podeAbrir && painel.id === a.id && painel.modo === "ficha";
   const mesAtual = isoHoje().slice(0, 7);
+  const mes = dados.mensalidades.find((m) => m.aluno_id === a.id && m.competencia.slice(0, 7) === mesAtual);
+  const cred = creditosDe(a.id);
+
+  // repetir o nome da turma dentro da seção dela seria ruído; o que informa é
+  // onde mais esse aluno está
+  const outras = turmasDe(a.id).filter((t) => t.id !== turmaDaSecao).map((t) => t.nome);
+  const abaixo = exAluno
+    ? "saiu do ateliê"
+    : outras.length
+      ? "também em " + outras.join(", ")
+      : cred > 0
+        ? cred + (cred === 1 ? " crédito" : " créditos") + " de reposição"
+        : "";
+
+  const situacao = exAluno
+    ? ""
+    : mes && statusDe(mes) === "atrasado"
+      ? '<span class="chip chip--atraso">' + icone("alert-circle", "icon--sm") + "em atraso</span>"
+      : '<span class="chip chip--ok">' + icone("check", "icon--sm icon--ok") + "em dia</span>";
+
+  return (
+    '<li class="produto' + (aberto ? " produto--aberto" : "") + '">' +
+    '<button type="button" class="produto-toque" data-acao="aluno-ficha" data-alvo="' + esc(a.id) +
+    '" aria-expanded="' + aberto + '">' + avatar(a.nome, true) +
+    '<span class="row-main"><span class="row-name">' + esc(a.nome) + "</span>" +
+    (abaixo ? '<span class="micro muted">' + esc(abaixo) + "</span>" : "") + "</span>" +
+    situacao + icone("chevron-down", "icon--seta") + "</button></li>" +
+    (aberto ? fichaAluno(a) : "") +
+    (podeAbrir && painel.id === a.id && painel.modo === "editar" ? formaAluno(a) : "")
+  );
+}
+
+function telaAlunosProfessor() {
+  const painel = painelAluno || {};
+  const alunos = dados.perfis.filter((p) => p.papel === "aluno");
+  const ativo = (a) => dados.matriculas.some((m) => m.aluno_id === a.id);
+  const exAlunos = alunos.filter((a) => !ativo(a)).sort((x, y) => x.nome.localeCompare(y.nome));
+  const jaAberto = new Set();
+  const comPainel = (a) => {
+    const primeira = !jaAberto.has(a.id);
+    jaAberto.add(a.id);
+    return primeira;
+  };
+
+  const secao = (titulo, contagem, itens) =>
+    itens.length
+      ? '<section style="margin-bottom:24px"><div class="section-head">' +
+        '<h2 class="section-title">' + esc(titulo) + "</h2>" +
+        '<p class="micro muted">' + esc(contagem) + "</p></div>" +
+        '<div class="card"><ul class="rows">' + itens.join("") + "</ul></div></section>"
+      : "";
+
+  const porTurma = dados.turmas.map((t) => {
+    const membros = dados.matriculas
+      .filter((m) => m.turma_id === t.id)
+      .map((m) => dados.perfilPorId[m.aluno_id])
+      .filter(Boolean)
+      .sort((x, y) => x.nome.localeCompare(y.nome));
+    return secao(t.nome, membros.length + " de " + t.vagas_regulares + " vagas",
+      membros.map((a) => linhaAluno(a, false, comPainel(a), t.id)));
+  }).join("");
+
   return (
     topo("Alunos", "professor") +
-    dados.turmas.map((t) => {
-      const membros = dados.matriculas
-        .filter((m) => m.turma_id === t.id)
-        .map((m) => dados.perfilPorId[m.aluno_id])
-        .filter(Boolean)
-        .sort((a, b) => a.nome.localeCompare(b.nome));
-      return (
-        '<section style="margin-bottom:24px"><div class="section-head"><h2 class="section-title">' + esc(t.nome) +
-        '</h2><p class="micro muted">' + membros.length + " de " + t.vagas_regulares + " vagas</p></div>" +
-        '<div class="card"><ul class="rows">' +
-        membros.map((a) => {
-          const mes = dados.mensalidades.find((m) => m.aluno_id === a.id && m.competencia.slice(0, 7) === mesAtual);
-          const atrasada = mes && statusDe(mes) === "atrasado";
-          const cred = dados.faltas.filter((f) => f.aluno_id === a.id).length -
-                       dados.reposicoes.filter((r) => r.aluno_id === a.id).length;
-          return (
-            "<li>" + avatar(a.nome, true) +
-            '<div class="row-main"><p class="row-name">' + esc(a.nome) + "</p>" +
-            (cred > 0 ? '<p class="micro muted">' + cred + (cred === 1 ? " crédito" : " créditos") + " de reposição</p>" : "") +
-            "</div>" +
-            (atrasada
-              ? '<span class="chip chip--atraso">' + icone("alert-circle", "icon--sm") + "em atraso</span>"
-              : '<span class="chip chip--ok">' + icone("check", "icon--sm") + "em dia</span>") + "</li>"
-          );
-        }).join("") + "</ul></div></section>"
-      );
-    }).join("")
+    (painel.modo === "novo"
+      ? '<div class="card" style="margin-bottom:24px"><ul class="rows">' + formaAluno(null) + "</ul></div>"
+      : '<p style="margin-bottom:24px">' +
+        botao("Novo aluno", "secondary", "aluno-novo", "", { full: true, icone: "circle-plus" }) + "</p>") +
+    (alunos.length
+      ? porTurma + secao("Ex-alunos", exAlunos.length, exAlunos.map((a) => linhaAluno(a, true, comPainel(a), null)))
+      : vazio("users", "Nenhum aluno ainda", "Cadastre o primeiro, ou espere alguém se cadastrar pelo app."))
   );
 }
 
@@ -744,6 +928,20 @@ function desenhaCarregando() {
 async function render(erroLogin) {
   if (!temSessao()) {
     dados = null;
+    alvoApp.classList.remove("shell--abas");
+    if (location.hash === "#/cadastro") {
+      if (!turmasAbertas.length) {
+        desenhaCarregando();
+        try {
+          turmasAbertas = await tabela("turmas_abertas").ler("select=*&order=nome");
+        } catch (e) {
+          turmasAbertas = [];
+        }
+      }
+      alvoApp.innerHTML = telaCadastro(erroLogin);
+      ligarCadastro();
+      return;
+    }
     alvoApp.innerHTML = telaEntrar(erroLogin);
     ligarLogin();
     return;
@@ -784,7 +982,7 @@ async function render(erroLogin) {
   }
 
   const trocou = rota !== rotaAnterior;
-  if (trocou) painelProduto = null;
+  if (trocou) { painelProduto = null; painelAluno = null; }
   const comAbas = souProfessor();
   alvoApp.classList.toggle("shell--abas", comAbas);
   alvoApp.innerHTML = ROTAS[rota]() + rodape() + (comAbas ? abas(rota) : "");
@@ -809,6 +1007,53 @@ function ligarLogin() {
       await render();
     } catch (e) {
       await render(e.rede ? e.message : "E-mail ou senha não conferem.");
+    }
+  });
+}
+
+function recadoCadastro(e) {
+  const m = e.message || "";
+  if (/already registered|already been registered|User already/i.test(m)) {
+    return "Esse e-mail já tem conta no ateliê. Tente entrar.";
+  }
+  if (/vagas regulares esgotadas/i.test(m)) return "A turma encheu enquanto você preenchia. Escolha outra.";
+  if (/Password should be|password/i.test(m)) return "A senha precisa de pelo menos 8 caracteres.";
+  if (/duplicate key|perfil_email_unico/i.test(m)) return "Esse e-mail já está cadastrado no ateliê.";
+  return m;
+}
+
+function ligarCadastro() {
+  const forma = document.getElementById("cadastro");
+  if (!forma) return;
+  forma.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const turmas = [...forma.querySelectorAll('input[name="turmas"]:checked')].map((c) => c.value);
+    if (!turmas.length) {
+      aviso("Escolha ao menos uma turma: é ela que define suas aulas.");
+      return;
+    }
+    const botaoCriar = forma.querySelector('button[type="submit"]');
+    botaoCriar.disabled = true;
+    botaoCriar.textContent = "Criando…";
+    try {
+      await cadastrar(forma.elements.email.value.trim(), forma.elements.senha.value, {
+        nome: forma.elements.nome.value.trim(),
+        telefone: forma.elements.telefone.value.trim(),
+        turmas: turmas,
+      });
+      turmasAbertas = [];
+      rotaAnterior = null;
+      if (!temSessao()) {
+        // o Supabase está pedindo confirmação de e-mail: a conta existe, a sessão não
+        location.hash = "#/entrar";
+        await render();
+        aviso("Conta criada. Confirme o e-mail que enviamos e depois entre.");
+        return;
+      }
+      location.hash = "";
+      await render();
+    } catch (e) {
+      await render(e.rede ? e.message : recadoCadastro(e));
     }
   });
 }
@@ -847,6 +1092,10 @@ alvoApp.addEventListener("submit", async (ev) => {
         forma_pagamento: forma.elements.forma.value,
       }), "Recebimento registrado.", aberto);
   }
+  if (forma.matches('form[data-forma="aluno"]')) {
+    ev.preventDefault();
+    return salvarAluno(forma);
+  }
   if (!forma.matches('form[data-forma="produto"]')) return;
   ev.preventDefault();
 
@@ -867,13 +1116,65 @@ alvoApp.addEventListener("submit", async (ev) => {
     id ? "Produto atualizado." : "Produto criado.");
 });
 
+// Cadastrar é um RPC porque o aluno nasce em pelo menos uma turma, e perfil e
+// matrícula precisam entrar na mesma transação. Editar é PATCH, e as turmas são
+// reconciliadas linha a linha: desmarcada vira ativa=false em vez de sumir, que
+// é o que faz do aluno um ex-aluno sem apagar o histórico.
+async function salvarAluno(forma) {
+  const id = forma.dataset.alvo;
+  const campos = {
+    nome: forma.elements.nome.value.trim(),
+    telefone: forma.elements.telefone.value.trim(),
+    email: forma.elements.email.value.trim().toLowerCase(),
+  };
+  const escolhidas = [...forma.querySelectorAll('input[name="turmas"]:checked')].map((c) => c.value);
+
+  if (!campos.nome) {
+    aviso("O aluno precisa de nome.");
+    return;
+  }
+  if (!id && !escolhidas.length) {
+    aviso("Escolha ao menos uma turma: um aluno nasce em turma.");
+    return;
+  }
+
+  const gravar = id
+    ? async () => {
+        await tabela("perfis").atualizar("id=eq." + id, {
+          nome: campos.nome,
+          telefone: campos.telefone || null,
+          email: campos.email || null,
+        });
+        const minhas = dados.matriculasTodas.filter((m) => m.aluno_id === id);
+        // as saídas primeiro: assim trocar de turma não esbarra numa vaga que
+        // o próprio aluno ainda está ocupando
+        for (const m of minhas.filter((m) => m.ativa && !escolhidas.includes(m.turma_id))) {
+          await tabela("matriculas").atualizar("id=eq." + m.id, { ativa: false });
+        }
+        for (const turma of escolhidas) {
+          const ja = minhas.find((m) => m.turma_id === turma);
+          if (!ja) await tabela("matriculas").inserir({ aluno_id: id, turma_id: turma });
+          else if (!ja.ativa) await tabela("matriculas").atualizar("id=eq." + ja.id, { ativa: true });
+        }
+      }
+    : () => rpc("cadastrar_aluno", {
+        nome: campos.nome,
+        email: campos.email || null,
+        telefone: campos.telefone || null,
+        turmas: escolhidas,
+      });
+
+  return salvar(forma, gravar, id ? "Aluno atualizado." : "Aluno cadastrado.", null, () => { painelAluno = null; });
+}
+
 // Todo formulário faz o mesmo: tranca o botão, grava, fecha o painel e recarrega.
-async function salvar(forma, gravar, recado, painelDepois) {
+async function salvar(forma, gravar, recado, painelDepois, aoFechar) {
   const botaoSalvar = forma.querySelector('button[type="submit"]');
   botaoSalvar.disabled = true;
   try {
     await gravar();
-    painelProduto = painelDepois || null;
+    if (aoFechar) aoFechar();
+    else painelProduto = painelDepois || null;
     dados = null;
     await render();
     aviso(recado);

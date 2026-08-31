@@ -583,6 +583,73 @@ ul {
   margin-top: 16px;
 }
 
+/* ---------- alunos ---------- */
+
+.turmas {
+  border: 1px solid var(--border);
+  border-radius: var(--r-control);
+  padding: 12px 14px 14px;
+  min-width: 0;
+}
+
+.turmas legend {
+  padding: 0 6px;
+}
+
+.turma-opcao {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.turma-opcao input {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  accent-color: var(--clay);
+  cursor: pointer;
+}
+
+.turma-opcao input:disabled {
+  cursor: not-allowed;
+}
+
+.turma-opcao input:disabled + .turma-nome {
+  color: var(--text-faint);
+}
+
+.turma-nome {
+  font-size: var(--label);
+  min-width: 0;
+}
+
+.ficha {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ficha li {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.ficha-rotulo {
+  flex: none;
+  width: 96px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ficha-valor {
+  font-size: var(--label);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* ---------- áreas e ocupação ---------- */
 
 .grid-2 {
