@@ -114,6 +114,11 @@ ul {
   padding: 24px 16px 40px;
 }
 
+/* a barra é fixa e cobriria o fim da página; a folga devolve o espaço */
+.shell--abas {
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+}
+
 .stack {
   display: flex;
   flex-direction: column;
@@ -149,6 +154,44 @@ ul {
   align-items: center;
   gap: 12px;
   margin-bottom: 24px;
+}
+
+.abas {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.aba {
+  flex: 1;
+  max-width: 120px;
+  min-height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 4px;
+  color: var(--text-faint);
+  font-size: var(--micro);
+  text-align: center;
+  transition: color 0.15s;
+}
+
+.aba:hover {
+  color: var(--text-muted);
+}
+
+.aba--atual {
+  color: var(--clay);
+  font-weight: 500;
 }
 
 .back {
@@ -505,7 +548,8 @@ ul {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .icon--seta {
+  .icon--seta,
+  .aba {
     transition: none;
   }
 }
@@ -650,6 +694,7 @@ ul {
   position: fixed;
   left: 50%;
   bottom: 24px;
+  z-index: 20;
   transform: translateX(-50%);
   max-width: calc(100% - 32px);
   padding: 12px 20px;
@@ -658,6 +703,11 @@ ul {
   background: var(--surface-raised);
   color: var(--text);
   font-size: var(--label);
+}
+
+/* com a barra de áreas na tela, o aviso sobe para não cair atrás dela */
+.shell--abas + .toast {
+  bottom: calc(84px + env(safe-area-inset-bottom));
 }
 
 .toast[hidden] {

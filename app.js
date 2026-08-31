@@ -232,6 +232,23 @@ const dinheiro = (centavos, classe) =>
 
 const iconeCirculo = (nome) => '<span class="icon-circle">' + icone(nome, "icon--lg") + "</span>";
 
+// As quatro áreas do professor. A home não entra: dela se sai pela barra, e
+// volta-se pela seta do topo de cada área.
+const AREAS = [
+  ["#/professor/produtos", "package", "Produtos"],
+  ["#/professor/alunos", "users", "Alunos"],
+  ["#/professor/calendario", "calendar-days", "Calendário"],
+  ["#/professor/financeiro", "wallet", "Financeiro"],
+];
+
+const abas = (rota) =>
+  '<nav class="abas" aria-label="Áreas do ateliê">' +
+  AREAS.map(([destino, nomeIcone, rotulo]) =>
+    '<a class="aba' + (destino === rota ? " aba--atual" : "") + '" href="' + destino + '"' +
+    (destino === rota ? ' aria-current="page"' : "") + ">" +
+    icone(nomeIcone) + "<span>" + esc(rotulo) + "</span></a>"
+  ).join("") + "</nav>";
+
 const area = (rota, nomeIcone, rotulo) =>
   '<a class="area" href="#/' + rota + '">' + iconeCirculo(nomeIcone) + '<span class="area-label">' + esc(rotulo) + "</span></a>";
 
@@ -341,13 +358,7 @@ function telaProfessor() {
       : "") +
     "</section>" +
     '<section style="margin-bottom:24px"><div class="section-head"><h2 class="section-title">Próximas aulas</h2></div>' +
-    '<div class="stack stack--tight">' + dados.ocupacao.slice(0, 3).map((oc) => cartaoOcupacao(oc)).join("") + "</div></section>" +
-    '<section><div class="section-head"><h2 class="section-title">Áreas</h2></div><div class="grid-2">' +
-    area("professor/produtos", "package", "Produtos") +
-    area("professor/alunos", "users", "Alunos") +
-    area("professor/calendario", "calendar-days", "Calendário") +
-    area("professor/financeiro", "wallet", "Financeiro") +
-    "</div></section>"
+    '<div class="stack stack--tight">' + dados.ocupacao.slice(0, 3).map((oc) => cartaoOcupacao(oc)).join("") + "</div></section>"
   );
 }
 
@@ -774,7 +785,9 @@ async function render(erroLogin) {
 
   const trocou = rota !== rotaAnterior;
   if (trocou) painelProduto = null;
-  alvoApp.innerHTML = ROTAS[rota]() + rodape();
+  const comAbas = souProfessor();
+  alvoApp.classList.toggle("shell--abas", comAbas);
+  alvoApp.innerHTML = ROTAS[rota]() + rodape() + (comAbas ? abas(rota) : "");
   if (trocou) {
     rotaAnterior = rota;
     window.scrollTo(0, 0);
