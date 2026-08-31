@@ -84,6 +84,7 @@ async function carregar() {
     mensalidades,
     pagamentos,
     produtos,
+    produtoPorId: porId(produtos),
     compras,
     ocupacao,
     creditos: typeof creditos === "number" ? creditos : 0,
@@ -349,11 +350,15 @@ function remocaoProduto(p) {
 }
 
 function linhaProduto(p) {
+  const vendidos = dados.compras
+    .filter((c) => c.produto_id === p.id)
+    .reduce((s, c) => s + c.quantidade, 0);
   return (
     '<li class="produto">' +
     '<span class="icon-circle">' + icone(p.estoque === 0 ? "package-x" : "package", "icon--lg") + "</span>" +
     '<div class="row-main"><p class="row-name">' + esc(p.nome) + '</p><p class="micro muted">' +
-    reais(p.preco_centavos) + " · " + (p.estoque === 0 ? "sem estoque" : p.estoque + " em estoque") + "</p></div>" +
+    reais(p.preco_centavos) + " · " + (p.estoque === 0 ? "sem estoque" : p.estoque + " em estoque") +
+    (vendidos ? " · " + vendidos + (vendidos === 1 ? " vendido" : " vendidos") : "") + "</p></div>" +
     '<div class="produto-barra"><div class="produto-estoque">' +
     botao("−", "neutral", "baixar-estoque", p.id, { sm: true, desabilitado: p.estoque === 0 }) +
     botao("+", "neutral", "repor-estoque", p.id, { sm: true }) + "</div>" +
@@ -541,9 +546,17 @@ function telaProdutosAluno() {
       : '<div style="margin-bottom:16px">' +
         vazio("package", "Nada à venda", "O ateliê ainda não pôs material no catálogo.") + "</div>") +
     (minhas.length
-      ? '<div class="card card--raised"><p class="label muted">Suas compras</p>' + dinheiro(gasto, "money--mid") +
-        '<p class="micro muted" style="margin-top:4px">' + minhas.length +
-        (minhas.length === 1 ? " item comprado" : " itens comprados") + "</p></div>"
+      ? '<section><div class="section-head"><h2 class="section-title">Suas compras</h2>' +
+        '<p class="micro muted">' + reais(gasto) + " no total</p></div>" +
+        '<div class="card"><ul class="rows">' +
+        minhas.map((c) => {
+          const p = dados.produtoPorId[c.produto_id];
+          return "<li>" + iconeCirculo("package") +
+            '<div class="row-main"><p class="row-name">' + esc(p ? p.nome : "Produto do catálogo") +
+            '</p><p class="micro muted">' + dataCurta(c.criada_em) +
+            (c.quantidade > 1 ? " · " + c.quantidade + " unidades" : "") + "</p></div>" +
+            '<span class="money label">' + reais(c.valor_centavos) + "</span></li>";
+        }).join("") + "</ul></div></section>"
       : "")
   );
 }
