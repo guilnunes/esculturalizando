@@ -26,6 +26,18 @@
   --surface-raised: #223033;
   --border: #2c3a3d;
 
+  /* Três fundos para os três tipos de card. O matiz gira para cada lado do
+     matiz da casa — o calendário fica nele, dinheiro e material se afastam em
+     direções opostas —, mas os três têm a mesma luminância relativa da
+     --surface (0,0141). É luminância, não o L do HSL: o olho pesa muito mais
+     o verde que o azul, e igualar o L deixaria o tom de produto visivelmente
+     mais claro, como se aquele card estivesse levantado.
+     São sutis de propósito: quem tem de saltar num card financeiro é o
+     vermelho do atraso, não o fundo. */
+  --card-financeiro: #1c1f2a;
+  --card-calendario: #182124;
+  --card-produto: #17221f;
+
   --clay: #c4796a;
   --clay-light: #d89880;
   --clay-deep: #8a4a3e;
@@ -377,10 +389,31 @@ ul {
   background: var(--surface-raised);
 }
 
+.card--financeiro {
+  background: var(--card-financeiro);
+}
+
+.card--calendario {
+  background: var(--card-calendario);
+}
+
+.card--produto {
+  background: var(--card-produto);
+}
+
+/* a gaveta de vendas herda o tom do produto que a abriu */
+.card--produto .rows > li.produto-painel--gaveta {
+  background: var(--surface-raised);
+}
+
 .alert {
   background: var(--surface-raised);
   border-left: 3px solid var(--clay);
   padding: 16px;
+}
+
+.alert--financeiro {
+  background: var(--card-financeiro);
 }
 
 /* ---------- ícones ---------- */

@@ -328,7 +328,7 @@ function cartaoOcupacao(oc, extra) {
   const t = dados.turmaPorId[oc.turma_id];
   const livres = oc.reposicoes_total - oc.reposicoes_ocupadas;
   return (
-    '<article class="card"><p>' + esc(t ? t.nome : "Turma") + '</p>' +
+    '<article class="card card--calendario"><p>' + esc(t ? t.nome : "Turma") + '</p>' +
     '<p class="label muted">' + esc(diaSemana(oc.data)) + ", " + dataCurta(oc.data) +
     (t ? " · " + esc(t.horario) : "") + "</p>" +
     '<div class="grid-2" style="margin-top:12px">' +
@@ -476,7 +476,7 @@ function telaProfessor() {
     '<p class="inline-note micro muted">' + icone("check", "icon--sm icon--ok") +
     "<span>" + emDia + " em dia neste mês</span></p></div>" +
     (visiveis.length
-      ? '<div class="card"><ul class="rows">' + visiveis.map((m) => linhaMensalidade(m, false)).join("") + "</ul></div>"
+      ? '<div class="card card--financeiro"><ul class="rows">' + visiveis.map((m) => linhaMensalidade(m, false)).join("") + "</ul></div>"
       : vazio("check", "Nenhuma pendência", "Todas as mensalidades do período estão quitadas.")) +
     (ordenadas.length > visiveis.length
       ? '<p class="label" style="margin-top:12px"><a href="#/professor/financeiro">Ver as ' + ordenadas.length + " no painel financeiro</a></p>"
@@ -624,7 +624,7 @@ function telaProdutosProfessor() {
       : '<p style="margin-bottom:16px">' +
         botao("Novo produto", "secondary", "produto-novo", "", { full: true, icone: "circle-plus" }) + "</p>") +
     (itens.length
-      ? '<div class="card"><ul class="rows">' + itens.join("") + "</ul></div>"
+      ? '<div class="card card--produto"><ul class="rows">' + itens.join("") + "</ul></div>"
       : vazio("package", "Catálogo vazio", "Cadastre o primeiro material para os alunos comprarem."))
   );
 }
@@ -818,12 +818,12 @@ function telaFinanceiroProfessor() {
     lista.length
       ? '<section style="margin-bottom:24px"><div class="section-head"><h2 class="section-title">' + esc(titulo) +
         '</h2><p class="micro muted">' + lista.length + "</p></div>" +
-        '<div class="card"><ul class="rows">' + lista.map((m) => linhaMensalidade(m, true)).join("") + "</ul></div></section>"
+        '<div class="card card--financeiro"><ul class="rows">' + lista.map((m) => linhaMensalidade(m, true)).join("") + "</ul></div></section>"
       : "";
 
   return (
     topo("Financeiro", "professor") +
-    '<div class="card card--raised" style="margin-bottom:24px"><p class="label muted">A receber em mensalidades</p>' +
+    '<div class="card card--financeiro" style="margin-bottom:24px"><p class="label muted">A receber em mensalidades</p>' +
     dinheiro(total, "money--big") +
     '<p class="micro muted" style="margin-top:4px">' + abertas.length + " em aberto · " + reais(vendido) +
     " vendido em material</p></div>" +
@@ -858,14 +858,14 @@ function telaAluno() {
     esc(dados.perfil.nome.split(" ")[0]) + "</h1></div></header>" +
     '<div class="stack">' +
     (atraso
-      ? '<div class="alert"><p class="inline-note label muted">' + icone("alert-circle", "icon--clay") +
+      ? '<div class="alert alert--financeiro"><p class="inline-note label muted">' + icone("alert-circle", "icon--clay") +
         "Mensalidade de " + esc(nomeMes(atraso.competencia)) + " em atraso</p>" +
         dinheiro(atraso.valor_centavos, "money--big") +
         '<p class="label muted" style="margin-top:4px">Venceu em ' + dataCurta(atraso.vencimento) + "</p>" +
         cartaoPagamento(atraso, declaradoAtraso, "primary") + "</div>"
       : "") +
     (proxima
-      ? '<article class="card"><p class="label muted">Próxima aula</p>' +
+      ? '<article class="card card--calendario"><p class="label muted">Próxima aula</p>' +
         '<p class="heading" style="margin-top:4px">' + esc(diaSemana(proxima.data)) + ", " + dataCurta(proxima.data) + "</p>" +
         '<p class="label muted" style="margin-top:4px">' + esc(t.nome) + " · " + esc(t.horario) + "</p>" +
         (falta
@@ -875,7 +875,7 @@ function telaAluno() {
         "</article>"
       : "") +
     (aberta
-      ? '<article class="card"><p class="inline-note label muted">' + icone("clock", "icon--warn") +
+      ? '<article class="card card--financeiro"><p class="inline-note label muted">' + icone("clock", "icon--warn") +
         '<span style="color:var(--warn)">Mensalidade de ' + esc(nomeMes(aberta.competencia)) + "</span></p>" +
         dinheiro(aberta.valor_centavos, "money--mid") +
         '<p class="label muted" style="margin-top:4px">Vence em ' + dataCurta(aberta.vencimento) + "</p>" +
@@ -895,7 +895,7 @@ function telaProdutosAluno() {
   return (
     topo("Produtos", "aluno") +
     (dados.produtos.length
-      ? '<div class="card" style="margin-bottom:16px"><ul class="rows">' +
+      ? '<div class="card card--produto" style="margin-bottom:16px"><ul class="rows">' +
         dados.produtos.map((p) =>
           "<li>" + '<span class="icon-circle">' + icone(p.estoque === 0 ? "package-x" : "package", "icon--lg") + "</span>" +
           '<div class="row-main"><p class="row-name">' + esc(p.nome) + '</p><p class="micro muted">' +
@@ -909,7 +909,7 @@ function telaProdutosAluno() {
       ? '<section><div class="section-head"><h2 class="section-title">Suas compras</h2>' +
         '<p class="micro ' + (devendo ? "chip--atraso" : "muted") + '" style="background:none">' +
         (devendo ? reais(devendo) + " a pagar" : reais(gasto) + " no total") + "</p></div>" +
-        '<div class="card"><ul class="rows">' +
+        '<div class="card card--produto"><ul class="rows">' +
         minhas.map((c) => {
           const p = dados.produtoPorId[c.produto_id];
           const st = statusCompra(c);
@@ -955,7 +955,7 @@ function telaReposicaoAluno() {
     '<p class="micro muted" style="margin-top:4px">Cada falta avisada antes da aula vale um crédito.</p></div>' +
     (marcadas.length
       ? '<section style="margin-bottom:24px"><div class="section-head"><h2 class="section-title">Suas reposições</h2></div>' +
-        '<div class="card"><ul class="rows">' +
+        '<div class="card card--calendario"><ul class="rows">' +
         marcadas.map((r) => {
           const oc = dados.ocupacao.find((o) => o.aula_id === r.aula_id);
           return oc ? linha(oc, "cancelar-reposicao", "Cancelar", "destructive", r.id) : "";
@@ -965,7 +965,7 @@ function telaReposicaoAluno() {
     (dados.creditos < 1
       ? vazio("calendar-plus", "Nenhum crédito de reposição", "Avise uma falta na sua próxima aula para ganhar um crédito.")
       : livres.length
-        ? '<div class="card"><ul class="rows">' +
+        ? '<div class="card card--calendario"><ul class="rows">' +
           livres.map((oc) => linha(oc, "marcar-reposicao", "Marcar", "neutral", oc.aula_id)).join("") + "</ul></div>"
         : vazio("calendar-plus", "Sem vaga de reposição", "As aulas do período estão com as vagas de reposição ocupadas.")) +
     "</section>"
