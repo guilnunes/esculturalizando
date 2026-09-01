@@ -112,6 +112,13 @@ const minhaTurma = () => {
   return m ? dados.turmaPorId[m.turma_id] : null;
 };
 
+// Um aluno pode frequentar mais de uma turma; a tela de aulas precisa das duas.
+const minhasTurmas = () =>
+  dados.matriculas
+    .filter((x) => x.aluno_id === dados.eu)
+    .map((x) => dados.turmaPorId[x.turma_id])
+    .filter(Boolean);
+
 const FORMAS = {
   pix: "Pix",
   dinheiro: "Dinheiro",
@@ -259,8 +266,10 @@ const dinheiro = (centavos, classe) =>
 
 const iconeCirculo = (nome) => '<span class="icon-circle">' + icone(nome, "icon--lg") + "</span>";
 
-// A home e as quatro áreas do professor, na ordem da barra do rodapé.
-const AREAS = [
+// A home e as áreas de cada papel, na ordem da barra do rodapé. Os dois
+// veem o mesmo ateliê de lugares diferentes: o professor cuida da casa
+// inteira, o aluno cuida da vida dele dentro dela.
+const AREAS_PROFESSOR = [
   ["#/professor", "home", "Início"],
   ["#/professor/produtos", "package", "Produtos"],
   ["#/professor/alunos", "users", "Alunos"],
@@ -268,9 +277,16 @@ const AREAS = [
   ["#/professor/financeiro", "wallet", "Financeiro"],
 ];
 
+const AREAS_ALUNO = [
+  ["#/aluno", "home", "Início"],
+  ["#/aluno/aulas", "calendar-days", "Aulas"],
+  ["#/aluno/produtos", "package", "Produtos"],
+  ["#/aluno/financeiro", "wallet", "Financeiro"],
+];
+
 const abas = (rota) =>
   '<nav class="abas" aria-label="Áreas do ateliê">' +
-  AREAS.map(([destino, nomeIcone, rotulo]) =>
+  (souProfessor() ? AREAS_PROFESSOR : AREAS_ALUNO).map(([destino, nomeIcone, rotulo]) =>
     '<a class="aba' + (destino === rota ? " aba--atual" : "") + '" href="' + destino + '"' +
     (destino === rota ? ' aria-current="page"' : "") + ">" +
     icone(nomeIcone) + "<span>" + esc(rotulo) + "</span></a>"
@@ -300,9 +316,6 @@ const barraTopo = () => {
     "</div></header>"
   );
 };
-
-const area = (rota, nomeIcone, rotulo) =>
-  '<a class="area" href="#/' + rota + '">' + iconeCirculo(nomeIcone) + '<span class="area-label">' + esc(rotulo) + "</span></a>";
 
 function botao(rotulo, variante, acao, alvo, extras) {
   const o = extras || {};
@@ -881,10 +894,7 @@ function telaAluno() {
         '<p class="label muted" style="margin-top:4px">Vence em ' + dataCurta(aberta.vencimento) + "</p>" +
         cartaoPagamento(aberta, declaradoAberta, atraso ? "neutral" : "primary") + "</article>"
       : vazio("check", "Mensalidades em dia", "Nada a pagar por enquanto.")) +
-    '<div class="grid-2">' +
-    area("aluno/produtos", "package", "Produtos") +
-    area("aluno/reposicao", "calendar-plus", dados.creditos > 0 ? "Reposição · " + dados.creditos : "Reposição") +
-    "</div></div>"
+    "</div>"
   );
 }
 
@@ -929,7 +939,15 @@ function telaProdutosAluno() {
   );
 }
 
-function telaReposicaoAluno() {
+// O calendário do aluno: quando ele tem aula, o aviso de falta que vira
+// crédito, e o que fazer com os créditos que ele já tem.
+function telaAulasAluno() {
+  const turmas = minhasTurmas();
+  const idsTurmas = turmas.map((t) => t.id);
+  const todasMinhas = dados.ocupacao.filter((oc) => idsTurmas.includes(oc.turma_id));
+  // O período inteiro são umas doze aulas, cada uma com seu botão de faltar.
+  // Ninguém avisa falta de novembro em setembro: mostrar as próximas basta.
+  const minhasAulas = todasMinhas.slice(0, 4);
   const marcadas = dados.reposicoes.filter((r) => r.aluno_id === dados.eu);
   const idsMarcados = marcadas.map((r) => r.aula_id);
   const meusFaltados = dados.faltas.filter((f) => f.aluno_id === dados.eu).map((f) => f.aula_id);
@@ -938,21 +956,46 @@ function telaReposicaoAluno() {
             oc.reposicoes_ocupadas < oc.reposicoes_total,
   );
 
-  const linha = (oc, acao, rotulo, variante, alvo) => {
+  const quando = (oc) => {
     const t = dados.turmaPorId[oc.turma_id];
-    return (
-      "<li>" + '<div class="row-main"><p class="row-name">' + esc(diaSemana(oc.data)) + ", " + dataCurta(oc.data) + "</p>" +
-      '<p class="micro muted">' + esc(t ? t.nome : "") + (t ? " · " + esc(t.horario) : "") +
-      " · reposição " + oc.reposicoes_ocupadas + " de " + oc.reposicoes_total + "</p></div>" +
-      botao(rotulo, variante, acao, alvo, { sm: true }) + "</li>"
-    );
+    return '<div class="row-main"><p class="row-name">' + esc(diaSemana(oc.data)) + ", " + dataCurta(oc.data) +
+      '</p><p class="micro muted">' + esc(t ? t.nome : "") + (t ? " · " + esc(t.horario) : "");
+  };
+
+  const linha = (oc, acao, rotulo, variante, alvo) =>
+    "<li>" + quando(oc) + " · reposição " + oc.reposicoes_ocupadas + " de " + oc.reposicoes_total +
+    "</p></div>" + botao(rotulo, variante, acao, alvo, { sm: true }) + "</li>";
+
+  const linhaMinha = (oc) => {
+    const falta = dados.faltas.find((f) => f.aula_id === oc.aula_id && f.aluno_id === dados.eu);
+    return "<li>" + quando(oc) + (falta ? " · falta avisada" : "") + "</p></div>" +
+      (falta
+        ? botao("Desfazer", "neutral", "desfazer-falta", falta.id, { sm: true })
+        : botao("Vou faltar", "secondary", "avisar-falta", oc.aula_id, { sm: true })) +
+      "</li>";
   };
 
   return (
-    topo("Reposição", "aluno") +
-    '<div class="card card--raised" style="margin-bottom:24px"><p class="label muted">Créditos disponíveis</p>' +
+    topo("Aulas", "aluno") +
+    (turmas.length
+      ? '<section style="margin-bottom:24px"><div class="section-head">' +
+        '<h2 class="section-title">Suas aulas</h2><p class="micro muted">' +
+        turmas.map((t) => esc(t.nome)).join(" · ") + "</p></div>" +
+        (minhasAulas.length
+          ? '<div class="card card--calendario"><ul class="rows">' +
+            minhasAulas.map(linhaMinha).join("") + "</ul></div>" +
+            (todasMinhas.length > minhasAulas.length
+              ? '<p class="micro muted" style="margin-top:8px">mais ' +
+                (todasMinhas.length - minhasAulas.length) + " no período</p>"
+              : "")
+          : vazio("calendar-days", "Nenhuma aula marcada", "O ateliê ainda não abriu as aulas do período.")) +
+        "</section>"
+      : '<div style="margin-bottom:24px">' +
+        vazio("calendar-days", "Sem turma", "Fale com o ateliê para entrar numa turma.") + "</div>") +
+    '<article class="card card--calendario" style="margin-bottom:24px">' +
+    '<p class="label muted">Créditos de reposição</p>' +
     '<p class="money money--big">' + dados.creditos + "</p>" +
-    '<p class="micro muted" style="margin-top:4px">Cada falta avisada antes da aula vale um crédito.</p></div>' +
+    '<p class="micro muted" style="margin-top:4px">Cada falta avisada antes da aula vale um crédito.</p></article>' +
     (marcadas.length
       ? '<section style="margin-bottom:24px"><div class="section-head"><h2 class="section-title">Suas reposições</h2></div>' +
         '<div class="card card--calendario"><ul class="rows">' +
@@ -963,12 +1006,91 @@ function telaReposicaoAluno() {
       : "") +
     '<section><div class="section-head"><h2 class="section-title">Vagas livres</h2></div>' +
     (dados.creditos < 1
-      ? vazio("calendar-plus", "Nenhum crédito de reposição", "Avise uma falta na sua próxima aula para ganhar um crédito.")
+      ? vazio("calendar-plus", "Nada a marcar", "Sem crédito, não há reposição para escolher.")
       : livres.length
         ? '<div class="card card--calendario"><ul class="rows">' +
           livres.map((oc) => linha(oc, "marcar-reposicao", "Marcar", "neutral", oc.aula_id)).join("") + "</ul></div>"
         : vazio("calendar-plus", "Sem vaga de reposição", "As aulas do período estão com as vagas de reposição ocupadas.")) +
     "</section>"
+  );
+}
+
+// O dinheiro do aluno num lugar só. As compras aparecem aqui pelo que ficou
+// devendo; o histórico delas fica em Produtos, que é onde ele as fez.
+function telaFinanceiroAluno() {
+  const minhas = dados.mensalidades.filter((m) => m.aluno_id === dados.eu);
+  const abertas = minhas.filter((m) => !m.pago_em)
+    .sort((a, b) => (a.vencimento < b.vencimento ? -1 : 1));
+  const pagas = minhas.filter((m) => m.pago_em)
+    .sort((a, b) => (a.vencimento > b.vencimento ? -1 : 1));
+  const devendo = dados.compras.filter((c) => c.aluno_id === dados.eu && !c.pago_em);
+  const total = abertas.reduce((soma, m) => soma + m.valor_centavos, 0) +
+    devendo.reduce((soma, c) => soma + c.valor_centavos, 0);
+
+  const cartaoMensalidade = (m) => {
+    const atrasada = statusDe(m) === "atrasado";
+    const declarado = pagamentoDe(m.id);
+    const cor = atrasada ? "clay" : "warn";
+    return (
+      '<article class="card card--financeiro" style="margin-bottom:12px">' +
+      '<p class="inline-note label muted">' + icone(atrasada ? "alert-circle" : "clock", "icon--" + cor) +
+      '<span style="color:var(--' + cor + ')">Mensalidade de ' + esc(nomeMes(m.competencia)) + "</span></p>" +
+      dinheiro(m.valor_centavos, "money--mid") +
+      '<p class="label muted" style="margin-top:4px">' + (atrasada ? "Venceu em " : "Vence em ") +
+      dataCurta(m.vencimento) + "</p>" +
+      (declarado
+        ? '<p class="inline-note label" style="margin-top:16px;color:var(--ok)">' +
+          icone("check", "icon--sm icon--ok") + "Pagamento informado, aguardando confirmação</p>"
+        : botao("Pagar", atrasada ? "primary" : "secondary", "declarar-pagamento", m.id, { full: true })) +
+      "</article>"
+    );
+  };
+
+  return (
+    topo("Financeiro", "aluno") +
+    '<div class="card card--financeiro" style="margin-bottom:24px"><p class="label muted">Total a pagar</p>' +
+    dinheiro(total, "money--big") +
+    '<p class="micro muted" style="margin-top:4px">' +
+    (total
+      ? abertas.length + (abertas.length === 1 ? " mensalidade" : " mensalidades") +
+        (devendo.length ? " · " + devendo.length + (devendo.length === 1 ? " compra" : " compras") : "")
+      : "Nada em aberto por enquanto.") +
+    "</p></div>" +
+    (abertas.length
+      ? '<section style="margin-bottom:24px"><div class="section-head">' +
+        '<h2 class="section-title">Mensalidades em aberto</h2></div>' +
+        abertas.map(cartaoMensalidade).join("") + "</section>"
+      : '<div style="margin-bottom:24px">' +
+        vazio("check", "Mensalidades em dia", "Nada a pagar por enquanto.") + "</div>") +
+    (devendo.length
+      ? '<section style="margin-bottom:24px"><div class="section-head">' +
+        '<h2 class="section-title">Material a pagar</h2>' +
+        '<p class="micro muted">combine com o ateliê</p></div>' +
+        '<div class="card card--produto"><ul class="rows">' +
+        devendo.map((c) => {
+          const produto = dados.produtoPorId[c.produto_id];
+          return "<li>" + iconeCirculo("package") +
+            '<div class="row-main"><p class="row-name">' + esc(produto ? produto.nome : "Produto do catálogo") +
+            '</p><p class="micro muted">' + dataCurta(c.criada_em) +
+            (c.quantidade > 1 ? " · " + c.quantidade + " unidades" : "") + "</p></div>" +
+            '<div class="row-side"><span class="money label">' + reais(c.valor_centavos) + "</span>" +
+            (statusCompra(c) === "atrasado"
+              ? '<span class="chip chip--atraso">' + icone("alert-circle", "icon--sm") + "em atraso</span>"
+              : '<span class="chip">a pagar</span>') +
+            "</div></li>";
+        }).join("") + "</ul></div></section>"
+      : "") +
+    (pagas.length
+      ? '<section><div class="section-head"><h2 class="section-title">Já pagas</h2>' +
+        '<p class="micro muted">' + pagas.length + "</p></div>" +
+        '<div class="card card--financeiro"><ul class="rows">' +
+        pagas.map((m) =>
+          "<li>" + '<div class="row-main"><p class="row-name">' + esc(nomeMes(m.competencia)) +
+          '</p><p class="micro muted">Pagou em ' + dataCurta(m.pago_em) + "</p></div>" +
+          '<div class="row-side"><span class="money label">' + reais(m.valor_centavos) + "</span>" +
+          '<span class="chip chip--ok">' + icone("check", "icon--sm icon--ok") + "pago</span></div></li>"
+        ).join("") + "</ul></div></section>"
+      : "")
   );
 }
 
@@ -981,8 +1103,9 @@ const ROTAS = {
   "#/professor/calendario": telaCalendarioProfessor,
   "#/professor/financeiro": telaFinanceiroProfessor,
   "#/aluno": telaAluno,
+  "#/aluno/aulas": telaAulasAluno,
   "#/aluno/produtos": telaProdutosAluno,
-  "#/aluno/reposicao": telaReposicaoAluno,
+  "#/aluno/financeiro": telaFinanceiroAluno,
   "#/conta": telaConta,
   "#/senha": telaSenha,
 };
@@ -1054,10 +1177,9 @@ async function render(erroLogin) {
 
   const trocou = rota !== rotaAnterior;
   if (trocou) { painelProduto = null; painelAluno = null; menuUsuario = false; }
-  const comAbas = souProfessor();
-  alvoApp.classList.toggle("shell--abas", comAbas);
-  alvoApp.classList.add("shell--topo");
-  alvoApp.innerHTML = barraTopo() + ROTAS[rota]() + rodape() + (comAbas ? abas(rota) : "");
+  // Os dois papéis navegam pela mesma barra de baixo; só as áreas mudam.
+  alvoApp.classList.add("shell--abas", "shell--topo");
+  alvoApp.innerHTML = barraTopo() + ROTAS[rota]() + rodape() + abas(rota);
   if (trocou) {
     rotaAnterior = rota;
     window.scrollTo(0, 0);

@@ -287,7 +287,8 @@ ul {
 
 .aba {
   flex: 1;
-  /* cinco abas de 96px fecham os 480px da coluna de conteúdo */
+  /* as cinco abas do professor, a 96px, fecham os 480px da coluna de
+     conteúdo; as quatro do aluno ficam centradas, com folga nas pontas */
   max-width: 96px;
   min-height: 60px;
   display: flex;
@@ -794,29 +795,6 @@ ul {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-}
-
-.area {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-card);
-  background: var(--surface);
-  color: var(--text);
-  text-align: left;
-  transition: background-color 0.15s;
-}
-
-.area:hover {
-  background: var(--surface-raised);
-}
-
-.area-label {
-  font-size: var(--label);
-  font-weight: 500;
 }
 
 .tally {
