@@ -937,7 +937,7 @@ function formaTurma(t) {
     '<p class="micro faint" style="margin-top:8px">' +
     (t
       ? "Mudar o dia refaz as aulas à frente. As mensalidades já lançadas guardam o valor de quando nasceram."
-      : "A turma nasce com doze semanas de aula a partir do próximo dia escolhido.") +
+      : "A turma não tem prazo: as aulas vão sendo abertas sozinhas, sempre umas doze semanas à frente.") +
     "</p>" +
     '<div class="produto-acoes">' +
     '<button type="submit" class="btn btn--primary btn--sm">Salvar</button>' +
@@ -1026,7 +1026,7 @@ function telaTurmasProfessor() {
     (dados.turmasAtivas.length || encerradas.length
       ? secao("Em atividade", dados.turmasAtivas.length, dados.turmasAtivas.map(linhaTurma)) +
         secao("Encerradas", encerradas.length, encerradas.map(linhaTurma))
-      : vazio("calendar-days", "Nenhuma turma ainda", "Crie a primeira e o calendário se enche sozinho."))
+      : vazio("calendar-days", "Nenhuma turma ainda", "Crie a primeira: o calendário dela se enche e se renova sozinho."))
   );
 }
 
@@ -1578,7 +1578,7 @@ async function salvarTurma(forma) {
 
   return salvar(forma, () =>
     id ? tabela("turmas").atualizar("id=eq." + id, campos) : tabela("turmas").inserir(campos),
-    id ? "Turma atualizada." : "Turma criada com doze semanas de aula.",
+    id ? "Turma atualizada." : "Turma criada.",
     null, () => { painelTurma = null; });
 }
 
