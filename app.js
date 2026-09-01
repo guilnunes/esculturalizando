@@ -403,21 +403,30 @@ function cartaoOcupacao(oc, extra) {
 }
 
 function linhaMensalidade(m, comAcao) {
+  const paga = statusDe(m) === "pago";
   const atrasada = statusDe(m) === "atrasado";
   const declarado = pagamentoDe(m.id);
-  let acao = "";
-  if (comAcao) {
-    acao = declarado && !declarado.confirmado_em
+
+  // uma mensalidade quitada não tem o que cobrar nem quando vencer: no histórico
+  // ela mostra quando entrou, e nenhum botão de receber
+  const abaixo = paga
+    ? '<p class="inline-note micro muted">' + icone("check", "icon--sm icon--ok") +
+      "Pago em " + dataCurta(m.pago_em) + "</p>"
+    : '<p class="inline-note micro muted">' +
+      icone(atrasada ? "alert-circle" : "clock", "icon--sm " + (atrasada ? "icon--clay" : "icon--warn")) +
+      (atrasada ? "Venceu" : "Vence") + " em " + dataCurta(m.vencimento) +
+      (declarado && !declarado.confirmado_em ? " · informou pagamento" : "") + "</p>";
+
+  const acao = !comAcao || paga
+    ? ""
+    : declarado && !declarado.confirmado_em
       ? botao("Confirmar", "neutral", "confirmar-pagamento", declarado.id, { sm: true })
       : botao("Marcar paga", "neutral", "marcar-paga", m.id, { sm: true });
-  }
+
   return (
     "<li>" + avatar(nomeDe(m.aluno_id), true) +
     '<div class="row-main"><p class="row-name">' + esc(nomeDe(m.aluno_id)) + "</p>" +
-    '<p class="inline-note micro muted">' +
-    icone(atrasada ? "alert-circle" : "clock", "icon--sm " + (atrasada ? "icon--clay" : "icon--warn")) +
-    (atrasada ? "Venceu" : "Vence") + " em " + dataCurta(m.vencimento) +
-    (declarado && !declarado.confirmado_em ? " · informou pagamento" : "") + "</p></div>" +
+    abaixo + "</div>" +
     '<div class="row-side">' + dinheiro(m.valor_centavos, atrasada ? "heading" : "muted") + acao + "</div></li>"
   );
 }
@@ -463,6 +472,9 @@ function telaCadastro(erro) {
     '<input class="input" name="email" type="email" required autocomplete="email"></label>' +
     '<label class="campo"><span class="micro muted">Senha</span>' +
     '<input class="input" name="senha" type="password" minlength="8" required autocomplete="new-password"></label>' +
+    '<label class="campo"><span class="micro muted">Melhor dia do mês para pagar</span>' +
+    '<input class="input" name="dia_cobranca" type="number" min="1" max="31" step="1" required value="10">' +
+    '<span class="micro faint">Depois disso, quem acerta o dia com você é o ateliê.</span></label>' +
     '<fieldset class="campo turmas"><legend class="micro muted">Turmas</legend>' +
     (turmasAbertas.length
       ? turmasAbertas.map((t) =>
@@ -697,6 +709,14 @@ const creditosDe = (alunoId) =>
 
 const ocupadasEm = (turmaId) => dados.matriculas.filter((m) => m.turma_id === turmaId).length;
 
+// A mesma conta de regras.mensalidade_de, só para mostrar na tela: soma das
+// turmas em que ele está, menos o desconto. Quem cobra é o banco.
+const mensalidadeDe = (a) =>
+  Math.round(
+    turmasDe(a.id).reduce((soma, t) => soma + t.mensalidade_centavos, 0) *
+      (100 - (a.desconto_percentual || 0)) / 100,
+  );
+
 function fichaAluno(a) {
   const turmas = turmasDe(a.id);
   const cred = creditosDe(a.id);
@@ -715,6 +735,13 @@ function fichaAluno(a) {
     linha("Conta no app", a.usuario_id
       ? '<span class="inline-note">' + icone("check", "icon--sm icon--ok") + "criada</span>"
       : '<span class="muted">ainda não se cadastrou</span>') +
+    linha("Mensalidade", turmas.length
+      ? reais(mensalidadeDe(a)) +
+        (a.desconto_percentual
+          ? ' <span class="micro muted">· ' + a.desconto_percentual + "% de desconto</span>"
+          : "")
+      : '<span class="muted">nada: fora de turma</span>') +
+    linha("Vence todo dia", String(a.dia_cobranca || 10)) +
     (cred > 0 ? linha("Reposição", cred + (cred === 1 ? " crédito" : " créditos")) : "") +
     "</ul>" +
     '<div class="produto-acoes">' +
@@ -740,13 +767,23 @@ function formaAluno(a) {
     '<label class="campo"><span class="micro muted">E-mail</span>' +
     '<input class="input" name="email" type="email" maxlength="120" autocomplete="off"' +
     (a && a.email ? valor(a.email) : "") + "></label>" +
+    '<div class="grid-2">' +
+    '<label class="campo"><span class="micro muted">Dia de cobrança</span>' +
+    '<input class="input" name="dia_cobranca" type="number" min="1" max="31" step="1" required' +
+    valor(a ? a.dia_cobranca : 10) + "></label>" +
+    '<label class="campo"><span class="micro muted">Desconto (%)</span>' +
+    '<input class="input" name="desconto" type="number" min="0" max="100" step="1" required' +
+    valor(a ? a.desconto_percentual : 0) + "></label>" +
+    "</div>" +
     '<fieldset class="campo turmas"><legend class="micro muted">Turmas</legend>' +
     dados.turmasAtivas.map((t) => {
       const marcada = marcadas.includes(t.id);
       const livres = t.vagas_regulares - ocupadasEm(t.id);
       return (
+        // turma cheia fica fora de alcance, como na tela de quem se cadastra: o
+        // banco recusaria de todo jeito, e descobrir isso ao salvar é pior
         '<label class="turma-opcao"><input type="checkbox" name="turmas" value="' + esc(t.id) + '"' +
-        (marcada ? " checked" : "") + ">" +
+        (marcada ? " checked" : livres > 0 ? "" : " disabled") + ">" +
         '<span class="turma-nome">' + esc(t.nome) + '<span class="micro muted"> · ' +
         (marcada ? "matriculado" : livres > 0 ? livres + (livres === 1 ? " vaga" : " vagas") : "sem vaga") +
         "</span></span></label>"
@@ -1032,6 +1069,10 @@ function telaTurmasProfessor() {
 
 function telaFinanceiroProfessor() {
   const abertas = dados.mensalidades.filter((m) => statusDe(m) !== "pago");
+  // recebido não sai de vista: o painel guarda o que entrou, não só o que falta
+  const recebidas = dados.mensalidades.filter((m) => statusDe(m) === "pago")
+    .slice().sort((a, b) => (a.pago_em > b.pago_em ? -1 : 1));
+  const entrou = recebidas.reduce((soma, m) => soma + m.valor_centavos, 0);
   const total = abertas.reduce((s, m) => s + m.valor_centavos, 0);
   const vendido = dados.compras.reduce((s, c) => s + c.valor_centavos, 0);
   const aguardando = abertas.filter((m) => { const p = pagamentoDe(m.id); return p && !p.confirmado_em; });
@@ -1054,7 +1095,21 @@ function telaFinanceiroProfessor() {
     bloco("Aguardando sua confirmação", aguardando) +
     bloco("Em atraso", atrasadas) +
     bloco("A vencer", aVencer) +
-    (abertas.length ? "" : vazio("check", "Nada em aberto", "Todas as mensalidades do período estão quitadas."))
+    (abertas.length
+      ? ""
+      : '<div style="margin-bottom:24px">' +
+        vazio("check", "Nada em aberto", "Todas as mensalidades lançadas estão quitadas.") + "</div>") +
+    (recebidas.length
+      ? '<section><div class="section-head"><h2 class="section-title">Já recebidas</h2>' +
+        '<p class="micro muted">' + reais(entrou) + "</p></div>" +
+        '<div class="card card--financeiro"><ul class="rows">' +
+        recebidas.slice(0, 30).map((m) => linhaMensalidade(m, true)).join("") + "</ul></div>" +
+        (recebidas.length > 30
+          ? '<p class="micro muted" style="margin-top:8px">mais ' + (recebidas.length - 30) +
+            " no histórico</p>"
+          : "") +
+        "</section>"
+      : "")
   );
 }
 
@@ -1446,6 +1501,7 @@ function ligarCadastro() {
         nome: forma.elements.nome.value.trim(),
         telefone: forma.elements.telefone.value.trim(),
         turmas: turmas,
+        dia_cobranca: forma.elements.dia_cobranca.value,
       });
       turmasAbertas = [];
       rotaAnterior = null;
@@ -1592,11 +1648,22 @@ async function salvarAluno(forma) {
     nome: forma.elements.nome.value.trim(),
     telefone: forma.elements.telefone.value.trim(),
     email: forma.elements.email.value.trim().toLowerCase(),
+    dia_cobranca: Number(forma.elements.dia_cobranca.value),
+    desconto_percentual: Number(forma.elements.desconto.value),
   };
   const escolhidas = [...forma.querySelectorAll('input[name="turmas"]:checked')].map((c) => c.value);
 
   if (!campos.nome) {
     aviso("O aluno precisa de nome.");
+    return;
+  }
+  if (!Number.isInteger(campos.dia_cobranca) || campos.dia_cobranca < 1 || campos.dia_cobranca > 31) {
+    aviso("O dia de cobrança vai de 1 a 31.");
+    return;
+  }
+  if (!Number.isInteger(campos.desconto_percentual) ||
+      campos.desconto_percentual < 0 || campos.desconto_percentual > 100) {
+    aviso("O desconto vai de 0 a 100 por cento.");
     return;
   }
   if (!id && !escolhidas.length) {
@@ -1610,6 +1677,8 @@ async function salvarAluno(forma) {
           nome: campos.nome,
           telefone: campos.telefone || null,
           email: campos.email || null,
+          dia_cobranca: campos.dia_cobranca,
+          desconto_percentual: campos.desconto_percentual,
         });
         const minhas = dados.matriculasTodas.filter((m) => m.aluno_id === id);
         // as saídas primeiro: assim trocar de turma não esbarra numa vaga que
@@ -1628,6 +1697,8 @@ async function salvarAluno(forma) {
         email: campos.email || null,
         telefone: campos.telefone || null,
         turmas: escolhidas,
+        dia_cobranca: campos.dia_cobranca,
+        desconto_percentual: campos.desconto_percentual,
       });
 
   return salvar(forma, gravar, id ? "Aluno atualizado." : "Aluno cadastrado.", null, () => { painelAluno = null; });
