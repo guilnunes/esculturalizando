@@ -14,6 +14,13 @@ function daIso(s) {
 
 const dataCurta = (s) => fmtData.format(daIso(s));
 const diaSemana = (s) => fmtDiaSemana.format(daIso(s));
+// turmas guardam o dia como número (0 = domingo), do jeito que o Postgres conta
+const DIAS = ["domingo", "segunda-feira", "terça-feira", "quarta-feira",
+              "quinta-feira", "sexta-feira", "sábado"];
+// na lista o nome da turma é o que importa; o dia por extenso o espremia
+const DIAS_CURTOS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+const nomeDia = (n) => DIAS[n] || "";
+const diaCurto = (n) => DIAS_CURTOS[n] || "";
 const nomeMes = (s) => fmtMes.format(daIso(s));
 const reais = (centavos) => fmtBRL.format(centavos / 100);
 
@@ -39,6 +46,7 @@ let rotaAnterior = null;
 // invalidam o cache.
 let painelProduto = null;
 let painelAluno = null;
+let painelTurma = null;
 
 // As turmas que a tela de cadastro mostra a quem ainda não tem conta.
 let turmasAbertas = [];
@@ -88,6 +96,8 @@ async function carregar() {
     perfis,
     perfilPorId: porId(perfis),
     turmas,
+    // encerrada continua consultável pelo histórico, mas não se escolhe mais
+    turmasAtivas: turmas.filter((t) => !t.encerrada_em),
     turmaPorId: porId(turmas),
     matriculas: matriculas.filter((m) => m.ativa),
     matriculasTodas: matriculas,
@@ -184,6 +194,39 @@ const acoes = {
     return null;
   },
 
+  "turma-nova": () => { painelTurma = { modo: "nova" }; return null; },
+  "turma-editar": (id) => { painelTurma = { modo: "editar", id: id }; return null; },
+  "turma-encerrar": (id) => { painelTurma = { modo: "encerrar", id: id }; return null; },
+  "turma-apagar": (id) => { painelTurma = { modo: "apagar", id: id }; return null; },
+  "turma-fechar": () => { painelTurma = null; return null; },
+  "turma-ficha": (id) => {
+    const aberto = painelTurma && painelTurma.modo === "ficha" && painelTurma.id === id;
+    painelTurma = aberto ? null : { modo: "ficha", id: id };
+    return null;
+  },
+
+  // Encerrar é um update, não um delete: o gatilho checa_turma desliga as
+  // matrículas, e aula, falta e reposição ficam onde estão.
+  "turma-encerrar-agora": (id) =>
+    tabela("turmas").atualizar("id=eq." + id, { encerrada_em: isoHoje() })
+      .then(() => { painelTurma = null; return "Turma encerrada."; }),
+
+  "turma-reabrir": (id) =>
+    tabela("turmas").atualizar("id=eq." + id, { encerrada_em: null })
+      .then(() => { painelTurma = null; return "Turma reaberta. Rematricule quem volta."; }),
+
+  "turma-apagar-agora": (id) =>
+    tabela("turmas").remover("id=eq." + id).then(
+      () => { painelTurma = null; return "Turma excluída."; },
+      (e) => {
+        // matriculas.turma_id é `on delete restrict`: quem já teve aluno fica
+        if (/foreign key/i.test(e.message)) {
+          throw new Error("Essa turma já teve aluno: encerre em vez de excluir.");
+        }
+        throw e;
+      },
+    ),
+
   "produto-novo": () => { painelProduto = { modo: "novo" }; return null; },
   "produto-editar": (id) => { painelProduto = { modo: "editar", id: id }; return null; },
   "produto-remover": (id) => { painelProduto = { modo: "remover", id: id }; return null; },
@@ -239,6 +282,8 @@ const acoesDeTela = new Set([
   "produto-novo", "produto-editar", "produto-remover", "produto-fechar",
   "produto-vendas", "venda-receber", "venda-fechar",
   "aluno-novo", "aluno-editar", "aluno-fechar", "aluno-ficha",
+  "turma-nova", "turma-editar", "turma-encerrar", "turma-apagar",
+  "turma-fechar", "turma-ficha",
   "menu-usuario",
 ]);
 
@@ -696,7 +741,7 @@ function formaAluno(a) {
     '<input class="input" name="email" type="email" maxlength="120" autocomplete="off"' +
     (a && a.email ? valor(a.email) : "") + "></label>" +
     '<fieldset class="campo turmas"><legend class="micro muted">Turmas</legend>' +
-    dados.turmas.map((t) => {
+    dados.turmasAtivas.map((t) => {
       const marcada = marcadas.includes(t.id);
       const livres = t.vagas_regulares - ocupadasEm(t.id);
       return (
@@ -777,7 +822,7 @@ function telaAlunosProfessor() {
         '<div class="card"><ul class="rows">' + itens.join("") + "</ul></div></section>"
       : "";
 
-  const porTurma = dados.turmas.map((t) => {
+  const porTurma = dados.turmasAtivas.map((t) => {
     const membros = dados.matriculas
       .filter((m) => m.turma_id === t.id)
       .map((m) => dados.perfilPorId[m.aluno_id])
@@ -801,7 +846,10 @@ function telaAlunosProfessor() {
 
 function telaCalendarioProfessor() {
   return (
-    topo("Calendário", "professor") + '<div class="stack stack--tight">' +
+    topo("Calendário", "professor") +
+    '<p style="margin-bottom:16px"><a class="btn btn--secondary btn--full" href="#/professor/turmas">' +
+    icone("users") + "Turmas do ateliê</a></p>" +
+    '<div class="stack stack--tight">' +
     dados.ocupacao.map((oc) => {
       const faltantes = dados.faltas.filter((f) => f.aula_id === oc.aula_id).map((f) => nomeDe(f.aluno_id));
       const repositores = dados.reposicoes.filter((r) => r.aula_id === oc.aula_id).map((r) => nomeDe(r.aluno_id));
@@ -816,6 +864,169 @@ function telaCalendarioProfessor() {
           : "");
       return cartaoOcupacao(oc, extra);
     }).join("") + "</div>"
+  );
+}
+
+// Quantos entraram e quantos cabem — a conta que decide se a turma recebe mais
+// alguém. Conta matrícula ativa: quem saiu não ocupa vaga.
+const alunosEm = (turmaId) => dados.matriculas.filter((m) => m.turma_id === turmaId).length;
+
+// Turma em que ninguém nunca entrou é engano recente e pode sumir. Depois da
+// primeira matrícula ela vira histórico, e o banco recusa o delete.
+const turmaVirgem = (turmaId) => !dados.matriculasTodas.some((m) => m.turma_id === turmaId);
+
+function fichaTurma(t) {
+  const dentro = alunosEm(t.id);
+  const adiante = dados.aulas.filter((a) => a.turma_id === t.id && a.data > isoHoje()).length;
+  const linha = (rotulo, valor) =>
+    '<li><span class="micro faint ficha-rotulo">' + rotulo + "</span>" +
+    '<span class="ficha-valor">' + valor + "</span></li>";
+
+  return (
+    '<li class="produto-painel produto-painel--gaveta">' +
+    '<ul class="ficha">' +
+    linha("Quando", esc(nomeDia(t.dia_semana)) + ", " + esc(t.horario)) +
+    linha("Vagas regulares", dentro + " de " + t.vagas_regulares) +
+    linha("Vagas de reposição", String(t.vagas_reposicao)) +
+    linha("Mensalidade", reais(t.mensalidade_centavos)) +
+    linha("Aulas à frente", t.encerrada_em
+      ? '<span class="muted">nenhuma: turma encerrada</span>'
+      : String(adiante)) +
+    (t.encerrada_em ? linha("Encerrada em", dataCurta(t.encerrada_em)) : "") +
+    "</ul>" +
+    '<div class="produto-acoes">' +
+    (t.encerrada_em
+      ? botao("Reabrir", "secondary", "turma-reabrir", t.id, { sm: true })
+      : botao("Editar", "secondary", "turma-editar", t.id, { sm: true }) +
+        botao("Encerrar", "neutral", "turma-encerrar", t.id, { sm: true })) +
+    (turmaVirgem(t.id) ? botao("Excluir", "destructive", "turma-apagar", t.id, { sm: true }) : "") +
+    botao("Fechar", "ghost", "turma-fechar", "", { sm: true }) +
+    "</div></li>"
+  );
+}
+
+function formaTurma(t) {
+  const valor = (v) => ' value="' + esc(v) + '"';
+  const numero = (nome, rotulo, v, min) =>
+    '<label class="campo"><span class="micro muted">' + rotulo + "</span>" +
+    '<input class="input" name="' + nome + '" type="number" min="' + min + '" step="1" required' +
+    valor(v) + "></label>";
+
+  return (
+    '<li class="produto-painel"><form data-forma="turma" data-alvo="' + esc(t ? t.id : "") + '">' +
+    '<p class="section-title">' + (t ? "Editar turma" : "Nova turma") + "</p>" +
+    '<label class="campo"><span class="micro muted">Nome</span>' +
+    '<input class="input" name="nome" maxlength="80" required autocomplete="off"' +
+    (t ? valor(t.nome) : "") + "></label>" +
+    '<label class="campo"><span class="micro muted">Dia da semana</span>' +
+    '<select class="input" name="dia_semana">' +
+    DIAS.map((nome, n) =>
+      '<option value="' + n + '"' + (t && t.dia_semana === n ? " selected" : "") + ">" +
+      esc(nome) + "</option>").join("") +
+    "</select></label>" +
+    '<label class="campo"><span class="micro muted">Horário</span>' +
+    '<input class="input" name="horario" maxlength="40" required autocomplete="off"' +
+    ' placeholder="19h00 às 21h00"' + (t ? valor(t.horario) : "") + "></label>" +
+    '<div class="grid-2">' +
+    numero("vagas_regulares", "Vagas regulares", t ? t.vagas_regulares : 8, 1) +
+    numero("vagas_reposicao", "Vagas de reposição", t ? t.vagas_reposicao : 2, 0) +
+    "</div>" +
+    '<label class="campo"><span class="micro muted">Mensalidade (R$)</span>' +
+    '<input class="input" name="mensalidade" type="number" min="0" step="0.01" required' +
+    valor(t ? (t.mensalidade_centavos / 100).toFixed(2) : "380.00") + "></label>" +
+    '<p class="micro faint" style="margin-top:8px">' +
+    (t
+      ? "Mudar o dia refaz as aulas à frente. As mensalidades já lançadas guardam o valor de quando nasceram."
+      : "A turma nasce com doze semanas de aula a partir do próximo dia escolhido.") +
+    "</p>" +
+    '<div class="produto-acoes">' +
+    '<button type="submit" class="btn btn--primary btn--sm">Salvar</button>' +
+    botao("Cancelar", "ghost", "turma-fechar", "", { sm: true }) +
+    "</div></form></li>"
+  );
+}
+
+function encerramentoTurma(t) {
+  const dentro = alunosEm(t.id);
+  return (
+    '<li class="produto-painel">' +
+    '<p class="label">Encerrar ' + esc(t.nome) + "?</p>" +
+    '<p class="micro muted" style="margin-top:4px">' +
+    (dentro
+      ? "Os " + dentro + " alunos saem da turma — quem não estiver em outra vira ex-aluno. "
+      : "") +
+    "Ela sai do calendário e de quem se cadastra. Aulas, faltas e reposições ficam no histórico, " +
+    "e reabrir traz a turma de volta (os alunos, não).</p>" +
+    '<div class="produto-acoes">' +
+    botao("Encerrar", "destructive", "turma-encerrar-agora", t.id, { sm: true }) +
+    botao("Cancelar", "ghost", "turma-fechar", "", { sm: true }) +
+    "</div></li>"
+  );
+}
+
+function remocaoTurma(t) {
+  return (
+    '<li class="produto-painel">' +
+    '<p class="label">Excluir ' + esc(t.nome) + "?</p>" +
+    '<p class="micro muted" style="margin-top:4px">Ninguém entrou nela ainda, então some sem deixar rastro, ' +
+    "com as aulas que tinha à frente.</p>" +
+    '<div class="produto-acoes">' +
+    botao("Excluir", "destructive", "turma-apagar-agora", t.id, { sm: true }) +
+    botao("Cancelar", "ghost", "turma-fechar", "", { sm: true }) +
+    "</div></li>"
+  );
+}
+
+function linhaTurma(t) {
+  const painel = painelTurma || {};
+  const aberto = painel.id === t.id && painel.modo === "ficha";
+  const dentro = alunosEm(t.id);
+  const cheia = dentro >= t.vagas_regulares;
+
+  const abaixo = t.encerrada_em
+    ? "encerrada em " + dataCurta(t.encerrada_em)
+    : diaCurto(t.dia_semana) + " · " + t.horario;
+
+  return (
+    '<li class="produto' + (aberto ? " produto--aberto" : "") + '">' +
+    '<button type="button" class="produto-toque" data-acao="turma-ficha" data-alvo="' + esc(t.id) +
+    '" aria-expanded="' + aberto + '">' +
+    '<span class="row-main"><span class="row-name">' + esc(t.nome) + "</span>" +
+    '<span class="micro muted">' + esc(abaixo) + "</span></span>" +
+    (t.encerrada_em
+      ? ""
+      : '<span class="chip' + (cheia ? "" : " chip--ok") + '">' + dentro + " de " + t.vagas_regulares + "</span>") +
+    icone("chevron-down", "icon--seta") + "</button></li>" +
+    (aberto ? fichaTurma(t) : "") +
+    (painel.id === t.id && painel.modo === "editar" ? formaTurma(t) : "") +
+    (painel.id === t.id && painel.modo === "encerrar" ? encerramentoTurma(t) : "") +
+    (painel.id === t.id && painel.modo === "apagar" ? remocaoTurma(t) : "")
+  );
+}
+
+function telaTurmasProfessor() {
+  const painel = painelTurma || {};
+  const encerradas = dados.turmas.filter((t) => t.encerrada_em);
+
+  const secao = (titulo, contagem, itens) =>
+    itens.length
+      ? '<section style="margin-bottom:24px"><div class="section-head">' +
+        '<h2 class="section-title">' + esc(titulo) + "</h2>" +
+        '<p class="micro muted">' + esc(contagem) + "</p></div>" +
+        '<div class="card card--calendario"><ul class="rows">' + itens.join("") + "</ul></div></section>"
+      : "";
+
+  return (
+    topo("Turmas", "professor/calendario") +
+    (painel.modo === "nova"
+      ? '<div class="card card--calendario" style="margin-bottom:24px"><ul class="rows">' +
+        formaTurma(null) + "</ul></div>"
+      : '<p style="margin-bottom:24px">' +
+        botao("Nova turma", "secondary", "turma-nova", "", { full: true, icone: "circle-plus" }) + "</p>") +
+    (dados.turmasAtivas.length || encerradas.length
+      ? secao("Em atividade", dados.turmasAtivas.length, dados.turmasAtivas.map(linhaTurma)) +
+        secao("Encerradas", encerradas.length, encerradas.map(linhaTurma))
+      : vazio("calendar-days", "Nenhuma turma ainda", "Crie a primeira e o calendário se enche sozinho."))
   );
 }
 
@@ -1101,6 +1312,7 @@ const ROTAS = {
   "#/professor/produtos": telaProdutosProfessor,
   "#/professor/alunos": telaAlunosProfessor,
   "#/professor/calendario": telaCalendarioProfessor,
+  "#/professor/turmas": telaTurmasProfessor,
   "#/professor/financeiro": telaFinanceiroProfessor,
   "#/aluno": telaAluno,
   "#/aluno/aulas": telaAulasAluno,
@@ -1176,7 +1388,7 @@ async function render(erroLogin) {
   }
 
   const trocou = rota !== rotaAnterior;
-  if (trocou) { painelProduto = null; painelAluno = null; menuUsuario = false; }
+  if (trocou) { painelProduto = null; painelAluno = null; painelTurma = null; menuUsuario = false; }
   // Os dois papéis navegam pela mesma barra de baixo; só as áreas mudam.
   alvoApp.classList.add("shell--abas", "shell--topo");
   alvoApp.innerHTML = barraTopo() + ROTAS[rota]() + rodape() + abas(rota);
@@ -1315,6 +1527,10 @@ alvoApp.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     return salvarAluno(forma);
   }
+  if (forma.matches('form[data-forma="turma"]')) {
+    ev.preventDefault();
+    return salvarTurma(forma);
+  }
   if (!forma.matches('form[data-forma="produto"]')) return;
   ev.preventDefault();
 
@@ -1334,6 +1550,37 @@ alvoApp.addEventListener("submit", async (ev) => {
     id ? tabela("produtos").atualizar("id=eq." + id, campos) : tabela("produtos").inserir(campos),
     id ? "Produto atualizado." : "Produto criado.");
 });
+
+// Turma é PATCH/POST direto: os limites que importam — encolher vaga abaixo de
+// quem já está dentro, mudar o dia com falta ou reposição marcada — são gatilho
+// no banco, e chegam aqui como mensagem pronta para mostrar.
+async function salvarTurma(forma) {
+  const id = forma.dataset.alvo;
+  const campos = {
+    nome: forma.elements.nome.value.trim(),
+    dia_semana: Number(forma.elements.dia_semana.value),
+    horario: forma.elements.horario.value.trim(),
+    vagas_regulares: Number(forma.elements.vagas_regulares.value),
+    vagas_reposicao: Number(forma.elements.vagas_reposicao.value),
+    mensalidade_centavos: Math.round(Number(forma.elements.mensalidade.value) * 100),
+  };
+
+  if (!campos.nome || !campos.horario) {
+    aviso("A turma precisa de nome e horário.");
+    return;
+  }
+  if (!Number.isInteger(campos.vagas_regulares) || campos.vagas_regulares < 1 ||
+      !Number.isInteger(campos.vagas_reposicao) || campos.vagas_reposicao < 0 ||
+      !Number.isInteger(campos.mensalidade_centavos) || campos.mensalidade_centavos < 0) {
+    aviso("Confira as vagas e a mensalidade.");
+    return;
+  }
+
+  return salvar(forma, () =>
+    id ? tabela("turmas").atualizar("id=eq." + id, campos) : tabela("turmas").inserir(campos),
+    id ? "Turma atualizada." : "Turma criada com doze semanas de aula.",
+    null, () => { painelTurma = null; });
+}
 
 // Cadastrar é um RPC porque o aluno nasce em pelo menos uma turma, e perfil e
 // matrícula precisam entrar na mesma transação. Editar é PATCH, e as turmas são
