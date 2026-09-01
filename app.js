@@ -1073,7 +1073,15 @@ function telaFinanceiroProfessor() {
   const recebidas = dados.mensalidades.filter((m) => statusDe(m) === "pago")
     .slice().sort((a, b) => (a.pago_em > b.pago_em ? -1 : 1));
   const entrou = recebidas.reduce((soma, m) => soma + m.valor_centavos, 0);
-  const total = abertas.reduce((s, m) => s + m.valor_centavos, 0);
+
+  // O que falta receber se divide no tempo, não no trâmite: o que ainda vence
+  // neste mês, e o que já passou do prazo. Um punhado vence num mês à frente —
+  // é a primeira cobrança de quem entrou tarde — e não cabe em nenhum dos dois.
+  const esteMes = isoHoje().slice(0, 7);
+  const vencidas = abertas.filter((m) => statusDe(m) === "atrasado");
+  const doMes = abertas.filter((m) => statusDe(m) !== "atrasado" && m.vencimento.slice(0, 7) === esteMes);
+  const adiante = abertas.filter((m) => statusDe(m) !== "atrasado" && m.vencimento.slice(0, 7) > esteMes);
+  const soma = (lista) => lista.reduce((t, m) => t + m.valor_centavos, 0);
   const vendido = dados.compras.reduce((s, c) => s + c.valor_centavos, 0);
   const aguardando = abertas.filter((m) => { const p = pagamentoDe(m.id); return p && !p.confirmado_em; });
   const atrasadas = abertas.filter((m) => statusDe(m) === "atrasado" && !aguardando.includes(m));
@@ -1088,9 +1096,24 @@ function telaFinanceiroProfessor() {
 
   return (
     topo("Financeiro", "professor") +
-    '<div class="card card--financeiro" style="margin-bottom:24px"><p class="label muted">A receber em mensalidades</p>' +
-    dinheiro(total, "money--big") +
-    '<p class="micro muted" style="margin-top:4px">' + abertas.length + " em aberto · " + reais(vendido) +
+    '<div class="card card--financeiro" style="margin-bottom:24px">' +
+    '<p class="label muted">A receber em mensalidades</p>' +
+    '<div class="grid-2" style="margin-top:12px">' +
+    '<div class="tally"><p class="micro muted">Mês atual</p>' +
+    dinheiro(soma(doMes), "money--mid") +
+    '<p class="micro muted" style="margin-top:4px">' + doMes.length +
+    (doMes.length === 1 ? " a vencer" : " a vencer") + "</p></div>" +
+    '<div class="tally' + (vencidas.length ? " tally--atraso" : "") + '">' +
+    '<p class="micro muted">Atrasos</p>' +
+    dinheiro(soma(vencidas), "money--mid") +
+    '<p class="micro muted" style="margin-top:4px">' + vencidas.length +
+    (vencidas.length === 1 ? " vencida" : " vencidas") + "</p></div>" +
+    "</div>" +
+    (adiante.length
+      ? '<p class="micro muted" style="margin-top:12px">Mais ' + reais(soma(adiante)) +
+        " vencendo nos meses à frente.</p>"
+      : "") +
+    '<p class="micro muted" style="margin-top:12px">' + reais(vendido) +
     " vendido em material</p></div>" +
     bloco("Aguardando sua confirmação", aguardando) +
     bloco("Em atraso", atrasadas) +

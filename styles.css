@@ -803,6 +803,16 @@ ul {
   padding: 12px;
 }
 
+/* o quadro de atrasos só se acende quando há atraso: um número em vermelho
+   que está sempre lá deixa de ser aviso e vira decoração */
+.tally--atraso {
+  border-color: var(--clay-deep);
+}
+
+.tally--atraso .money {
+  color: var(--clay);
+}
+
 .tally-value {
   font-size: var(--heading);
   line-height: 1.3;
