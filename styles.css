@@ -156,6 +156,110 @@ ul {
   margin-bottom: 24px;
 }
 
+/* Barra fina, fixa no topo: a marca e quem está logado. 52px é o mínimo que
+   comporta um alvo de toque de 44px sem apertar. */
+.topo-app {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: calc(52px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 12px 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.shell--topo {
+  padding-top: calc(68px + env(safe-area-inset-top));
+}
+
+.topo-marca {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 4px;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--label);
+  font-weight: 600;
+}
+
+.topo-marca img {
+  border-radius: var(--r-full);
+  border: 1px solid var(--border);
+}
+
+.topo-conta {
+  position: relative;
+}
+
+.topo-conta .avatar {
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.topo-conta .avatar:hover,
+.topo-conta .avatar[aria-expanded="true"] {
+  border-color: var(--clay);
+  color: var(--clay);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 16;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.menu-quem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  overflow: hidden;
+}
+
+.menu-quem .row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--r-control);
+  color: var(--text);
+  font-size: var(--label);
+  text-align: left;
+}
+
+.menu-item:hover {
+  background: var(--border);
+}
+
+.menu-item--sair {
+  color: var(--danger);
+}
+
 .abas {
   position: fixed;
   left: 0;
@@ -550,7 +654,8 @@ ul {
 
 @media (prefers-reduced-motion: reduce) {
   .icon--seta,
-  .aba {
+  .aba,
+  .topo-conta .avatar {
     transition: none;
   }
 }

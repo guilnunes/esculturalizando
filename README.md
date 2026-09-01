@@ -57,6 +57,8 @@ qualquer servidor estático sem configuração de rotas.
 ## O que funciona
 
 - **Login** por e-mail e senha, com sessão renovada automaticamente
+- **Barra de topo** em toda tela de quem entrou: a marca à esquerda, as iniciais
+  à direita, e no avatar o menu com atualizar cadastro, trocar senha e sair
 - **Cadastro por dois caminhos**: a pessoa se cadastra e escolhe a turma, ou o
   professor a cadastra pelo app; quando ela cria a conta depois, o perfil que já
   existia é reivindicado pelo e-mail em vez de virar um segundo aluno
@@ -94,6 +96,8 @@ disciplina do JavaScript — são coisas que o Postgres recusa a gravar:
   estrangeira é `on delete restrict`.
 - Ninguém compra já pago: a política de INSERT em `compras` recusa a linha que
   nasce quitada, e só o professor tem política de UPDATE ali.
+- Ninguém se promove: o dono edita o próprio perfil, mas um gatilho recusa mudar
+  o papel, a conta ligada ao perfil e o e-mail de login.
 - Venda quitada tem forma de pagamento, e forma de pagamento só existe em venda
   quitada — as duas colunas andam juntas ou o check recusa.
 

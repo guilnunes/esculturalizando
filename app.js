@@ -1,4 +1,4 @@
-import { entrar, cadastrar, sair, temSessao, usuarioId, tabela, rpc } from "./api.js";
+import { entrar, cadastrar, trocarSenha, sair, temSessao, usuarioId, tabela, rpc } from "./api.js";
 
 /* ---------------------------------------------------------------- datas --- */
 
@@ -42,6 +42,9 @@ let painelAluno = null;
 
 // As turmas que a tela de cadastro mostra a quem ainda não tem conta.
 let turmasAbertas = [];
+
+// O menu que abre no avatar da barra de topo.
+let menuUsuario = false;
 
 const alvoApp = document.getElementById("app");
 const alvoToast = document.getElementById("toast");
@@ -163,6 +166,8 @@ const acoes = {
     tabela("compras").inserir({ aluno_id: dados.eu, produto_id: produtoId, quantidade: 1, valor_centavos: 0 })
       .then(() => "Compra registrada. Combine o pagamento com o ateliê."),
 
+  "menu-usuario": () => { menuUsuario = !menuUsuario; return null; },
+
   "aluno-novo": () => { painelAluno = { modo: "novo" }; return null; },
   "aluno-editar": (id) => { painelAluno = { modo: "editar", id: id }; return null; },
   "aluno-fechar": () => { painelAluno = null; return null; },
@@ -227,6 +232,7 @@ const acoesDeTela = new Set([
   "produto-novo", "produto-editar", "produto-remover", "produto-fechar",
   "produto-vendas", "venda-receber", "venda-fechar",
   "aluno-novo", "aluno-editar", "aluno-fechar", "aluno-ficha",
+  "menu-usuario",
 ]);
 
 /* ------------------------------------------------------------ fragmentos --- */
@@ -270,6 +276,31 @@ const abas = (rota) =>
     icone(nomeIcone) + "<span>" + esc(rotulo) + "</span></a>"
   ).join("") + "</nav>";
 
+// Barra fina, em toda tela de quem entrou: a marca à esquerda, quem está
+// logado à direita. O menu do avatar é o único lugar de onde se sai do app.
+const barraTopo = () => {
+  const nome = dados.perfil.nome;
+  return (
+    '<header class="topo-app">' +
+    '<a class="topo-marca" href="#/" aria-label="Início">' +
+    '<img src="logo.svg" alt="" width="28" height="28"><span>Esculturalizando</span></a>' +
+    '<div class="topo-conta">' +
+    '<button type="button" class="avatar avatar--sm" data-acao="menu-usuario" data-alvo=""' +
+    ' aria-expanded="' + menuUsuario + '" aria-haspopup="true"' +
+    ' aria-label="Conta de ' + esc(nome) + '">' + esc(iniciais(nome)) + "</button>" +
+    (menuUsuario
+      ? '<div class="menu" role="menu">' +
+        '<p class="menu-quem"><span class="row-name">' + esc(nome) + "</span>" +
+        '<span class="micro muted">' + esc(dados.perfil.email || "") + "</span></p>" +
+        '<a class="menu-item" role="menuitem" href="#/conta">Atualizar cadastro</a>' +
+        '<a class="menu-item" role="menuitem" href="#/senha">Trocar senha</a>' +
+        '<button type="button" class="menu-item menu-item--sair" role="menuitem"' +
+        ' data-acao="sair" data-alvo="">Sair</button></div>'
+      : "") +
+    "</div></header>"
+  );
+};
+
 const area = (rota, nomeIcone, rotulo) =>
   '<a class="area" href="#/' + rota + '">' + iconeCirculo(nomeIcone) + '<span class="area-label">' + esc(rotulo) + "</span></a>";
 
@@ -291,8 +322,7 @@ const topo = (titulo, voltarPara) =>
   (voltarPara ? '<a class="back" href="#/' + voltarPara + '" aria-label="Voltar">' + icone("arrow-left", "icon--lg") + "</a>" : "") +
   '<h1 class="screen-title">' + esc(titulo) + "</h1></header>";
 
-const rodape = () =>
-  '<p style="margin-top:32px"><button class="btn btn--destructive btn--sm" data-acao="sair" data-alvo="">Sair</button></p>';
+const rodape = () => "";
 
 function cartaoOcupacao(oc, extra) {
   const t = dados.turmaPorId[oc.turma_id];
@@ -392,6 +422,40 @@ function telaCadastro(erro) {
     "</form>" +
     '<p class="label muted" style="margin-top:24px">Já tem conta? <a href="#/entrar">Entrar</a></p>' +
     "</main>"
+  );
+}
+
+function telaConta() {
+  const p = dados.perfil;
+  return (
+    topo("Atualizar cadastro", souProfessor() ? "professor" : "aluno") +
+    '<div class="card"><form data-forma="conta">' +
+    '<label class="campo"><span class="micro muted">Nome completo</span>' +
+    '<input class="input" name="nome" maxlength="120" required autocomplete="name" value="' + esc(p.nome) + '"></label>' +
+    '<label class="campo"><span class="micro muted">Telefone celular</span>' +
+    '<input class="input" name="telefone" type="tel" maxlength="32" autocomplete="tel" value="' +
+    esc(p.telefone || "") + '"></label>' +
+    '<label class="campo"><span class="micro muted">E-mail</span>' +
+    '<input class="input" value="' + esc(p.email || "") + '" disabled></label>' +
+    '<p class="micro faint" style="margin-top:8px">O e-mail é com o que você entra no app. ' +
+    "Para trocar, fale com o ateliê.</p>" +
+    '<button type="submit" class="btn btn--primary btn--full" style="margin-top:16px">Salvar</button>' +
+    "</form></div>"
+  );
+}
+
+function telaSenha() {
+  return (
+    topo("Trocar senha", souProfessor() ? "professor" : "aluno") +
+    '<div class="card"><form data-forma="senha">' +
+    '<label class="campo"><span class="micro muted">Nova senha</span>' +
+    '<input class="input" name="senha" type="password" minlength="8" required autocomplete="new-password"></label>' +
+    '<label class="campo"><span class="micro muted">Repita a nova senha</span>' +
+    '<input class="input" name="confirmacao" type="password" minlength="8" required autocomplete="new-password"></label>' +
+    '<p class="micro faint" style="margin-top:8px">Pelo menos 8 caracteres. ' +
+    "Você continua conectado depois de trocar.</p>" +
+    '<button type="submit" class="btn btn--primary btn--full" style="margin-top:16px">Trocar senha</button>' +
+    "</form></div>"
   );
 }
 
@@ -919,7 +983,12 @@ const ROTAS = {
   "#/aluno": telaAluno,
   "#/aluno/produtos": telaProdutosAluno,
   "#/aluno/reposicao": telaReposicaoAluno,
+  "#/conta": telaConta,
+  "#/senha": telaSenha,
 };
+
+// Rotas de qualquer um: não levam prefixo de papel, e o guarda não as desvia.
+const ROTAS_COMUNS = new Set(["#/conta", "#/senha"]);
 
 function desenhaCarregando() {
   alvoApp.innerHTML = '<p class="label muted" style="padding:24px 0">Carregando…</p>';
@@ -928,7 +997,7 @@ function desenhaCarregando() {
 async function render(erroLogin) {
   if (!temSessao()) {
     dados = null;
-    alvoApp.classList.remove("shell--abas");
+    alvoApp.classList.remove("shell--abas", "shell--topo");
     if (location.hash === "#/cadastro") {
       if (!turmasAbertas.length) {
         desenhaCarregando();
@@ -974,18 +1043,21 @@ async function render(erroLogin) {
   let rota = location.hash || "";
   const inicial = souProfessor() ? "#/professor" : "#/aluno";
   if (!ROTAS[rota]) rota = inicial;
-  if (!souProfessor() && rota.startsWith("#/professor")) rota = "#/aluno";
-  if (souProfessor() && rota.startsWith("#/aluno")) rota = "#/professor";
+  if (!ROTAS_COMUNS.has(rota)) {
+    if (!souProfessor() && rota.startsWith("#/professor")) rota = "#/aluno";
+    if (souProfessor() && rota.startsWith("#/aluno")) rota = "#/professor";
+  }
   if (rota !== location.hash) {
     location.replace(rota);
     return;
   }
 
   const trocou = rota !== rotaAnterior;
-  if (trocou) { painelProduto = null; painelAluno = null; }
+  if (trocou) { painelProduto = null; painelAluno = null; menuUsuario = false; }
   const comAbas = souProfessor();
   alvoApp.classList.toggle("shell--abas", comAbas);
-  alvoApp.innerHTML = ROTAS[rota]() + rodape() + (comAbas ? abas(rota) : "");
+  alvoApp.classList.add("shell--topo");
+  alvoApp.innerHTML = barraTopo() + ROTAS[rota]() + rodape() + (comAbas ? abas(rota) : "");
   if (trocou) {
     rotaAnterior = rota;
     window.scrollTo(0, 0);
@@ -1059,6 +1131,12 @@ function ligarCadastro() {
 }
 
 alvoApp.addEventListener("click", async (ev) => {
+  // tocar fora fecha o menu; tocar dentro dele deixa o item agir
+  if (menuUsuario && !ev.target.closest(".topo-conta")) {
+    menuUsuario = false;
+    await render();
+    return;
+  }
   const gatilho = ev.target.closest("button[data-acao]");
   if (!gatilho || gatilho.disabled) return;
   const acao = acoes[gatilho.dataset.acao];
@@ -1091,6 +1169,25 @@ alvoApp.addEventListener("submit", async (ev) => {
         pago_em: new Date().toISOString(),
         forma_pagamento: forma.elements.forma.value,
       }), "Recebimento registrado.", aberto);
+  }
+  if (forma.matches('form[data-forma="conta"]')) {
+    ev.preventDefault();
+    const nome = forma.elements.nome.value.trim();
+    if (!nome) { aviso("Seu cadastro precisa de nome."); return; }
+    return salvar(forma, () =>
+      tabela("perfis").atualizar("id=eq." + dados.eu, {
+        nome: nome,
+        telefone: forma.elements.telefone.value.trim() || null,
+      }), "Cadastro atualizado.", null, () => {});
+  }
+  if (forma.matches('form[data-forma="senha"]')) {
+    ev.preventDefault();
+    const senha = forma.elements.senha.value;
+    if (senha !== forma.elements.confirmacao.value) {
+      aviso("As duas senhas não são iguais.");
+      return;
+    }
+    return salvar(forma, () => trocarSenha(senha), "Senha trocada.", null, () => {});
   }
   if (forma.matches('form[data-forma="aluno"]')) {
     ev.preventDefault();

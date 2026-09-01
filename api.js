@@ -124,6 +124,11 @@ export async function cadastrar(email, senha, extras) {
   return nova;
 }
 
+// A senha vive no GoTrue, não em perfis: trocar é mexer no usuário da sessão.
+export async function trocarSenha(senha) {
+  return chamar("/auth/v1/user", { method: "PUT", body: JSON.stringify({ password: senha }) });
+}
+
 export async function sair() {
   try {
     if (temSessao()) await chamar("/auth/v1/logout", { method: "POST" }, false);
