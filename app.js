@@ -1407,10 +1407,12 @@ function telaAulasAluno() {
   const marcadas = dados.reposicoes.filter((r) => r.aluno_id === dados.eu);
   const idsMarcados = marcadas.map((r) => r.aula_id);
   const meusFaltados = dados.faltas.filter((f) => f.aluno_id === dados.eu).map((f) => f.aula_id);
-  // aula cancelada não recebe reposição, e a de hoje já passou do prazo de
-  // marcar: o banco recusa as duas, e oferecê-las aqui seria oferecer um erro
+  // O banco recusa três coisas aqui, e oferecê-las seria oferecer um erro: aula
+  // cancelada, aula de hoje (marcar vale até a véspera) e aula da turma dele —
+  // a vaga de reposição é para quem vem de fora repor o que perdeu.
   const todasLivres = dados.ocupacao.filter(
     (oc) => !idsMarcados.includes(oc.aula_id) && !meusFaltados.includes(oc.aula_id) &&
+            !idsTurmas.includes(oc.turma_id) &&
             !oc.cancelada && oc.data > isoHoje() &&
             oc.reposicoes_ocupadas < oc.reposicoes_total,
   );
