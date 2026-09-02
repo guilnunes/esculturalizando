@@ -228,6 +228,7 @@ const acoes = {
     ),
 
   "produto-novo": () => { painelProduto = { modo: "novo" }; return null; },
+  "produto-vender": (id) => { painelProduto = { modo: "vender", id: id }; return null; },
   "produto-editar": (id) => { painelProduto = { modo: "editar", id: id }; return null; },
   "produto-remover": (id) => { painelProduto = { modo: "remover", id: id }; return null; },
   "produto-fechar": () => { painelProduto = null; return null; },
@@ -280,7 +281,7 @@ const acoes = {
 
 const acoesDeTela = new Set([
   "produto-novo", "produto-editar", "produto-remover", "produto-fechar",
-  "produto-vendas", "venda-receber", "venda-fechar",
+  "produto-vendas", "venda-receber", "venda-fechar", "produto-vender",
   "aluno-novo", "aluno-editar", "aluno-fechar", "aluno-ficha",
   "turma-nova", "turma-editar", "turma-encerrar", "turma-apagar",
   "turma-fechar", "turma-ficha",
@@ -529,15 +530,47 @@ function telaSenha() {
   );
 }
 
+// O aluno leva a plastilina para usar na aula e acerta depois: a compra em
+// aberto é uma pendência tanto quanto a mensalidade, e some da vista se a home
+// só olhar para mensalidade.
+function linhaCompraPendente(c) {
+  const atrasada = statusCompra(c) === "atrasado";
+  const produto = dados.produtoPorId[c.produto_id];
+  const quem = nomeDe(c.aluno_id);
+  return (
+    "<li>" + avatar(quem, true) +
+    '<div class="row-main"><p class="row-name">' + esc(quem) + "</p>" +
+    '<p class="inline-note micro muted">' +
+    icone(atrasada ? "alert-circle" : "package", "icon--sm " + (atrasada ? "icon--clay" : "icon--warn")) +
+    esc(produto ? produto.nome : "Material do ateliê") +
+    (c.quantidade > 1 ? " · " + c.quantidade + " un" : "") +
+    " · " + (atrasada ? "levou em " + dataCurta(c.criada_em) : "levou hoje") + "</p></div>" +
+    '<div class="row-side">' + dinheiro(c.valor_centavos, atrasada ? "heading" : "muted") + "</div></li>"
+  );
+}
+
 function telaProfessor() {
   const abertas = dados.mensalidades.filter((m) => statusDe(m) !== "pago");
-  const ordenadas = abertas.slice().sort((a, b) => {
-    const peso = (m) => (statusDe(m) === "atrasado" ? 0 : 1);
-    return peso(a) - peso(b) || a.vencimento.localeCompare(b.vencimento) || nomeDe(a.aluno_id).localeCompare(nomeDe(b.aluno_id));
-  });
+  const devendoMaterial = dados.compras.filter((c) => !c.pago_em);
+
+  // as duas dívidas na mesma lista, atrasadas primeiro e mais velhas antes
+  const pendencias = [
+    ...abertas.map((m) => ({
+      atrasada: statusDe(m) === "atrasado", quando: m.vencimento,
+      quem: nomeDe(m.aluno_id), desenha: () => linhaMensalidade(m, false),
+    })),
+    ...devendoMaterial.map((c) => ({
+      atrasada: statusCompra(c) === "atrasado", quando: c.vencimento,
+      quem: nomeDe(c.aluno_id), desenha: () => linhaCompraPendente(c),
+    })),
+  ].sort((a, b) =>
+    (a.atrasada ? 0 : 1) - (b.atrasada ? 0 : 1) ||
+    a.quando.localeCompare(b.quando) ||
+    a.quem.localeCompare(b.quem));
+
   const mesAtual = isoHoje().slice(0, 7);
   const emDia = dados.mensalidades.filter((m) => m.competencia.slice(0, 7) === mesAtual && m.pago_em).length;
-  const visiveis = ordenadas.slice(0, 6);
+  const visiveis = pendencias.slice(0, 6);
 
   return (
     topo("Ateliê") +
@@ -546,10 +579,21 @@ function telaProfessor() {
     '<p class="inline-note micro muted">' + icone("check", "icon--sm icon--ok") +
     "<span>" + emDia + " em dia neste mês</span></p></div>" +
     (visiveis.length
-      ? '<div class="card card--financeiro"><ul class="rows">' + visiveis.map((m) => linhaMensalidade(m, false)).join("") + "</ul></div>"
-      : vazio("check", "Nenhuma pendência", "Todas as mensalidades do período estão quitadas.")) +
-    (ordenadas.length > visiveis.length
-      ? '<p class="label" style="margin-top:12px"><a href="#/professor/financeiro">Ver as ' + ordenadas.length + " no painel financeiro</a></p>"
+      ? '<div class="card card--financeiro"><ul class="rows">' +
+        visiveis.map((x) => x.desenha()).join("") + "</ul></div>"
+      : vazio("check", "Nenhuma pendência", "Mensalidades e material do período estão quitados.")) +
+    (pendencias.length > visiveis.length
+      ? '<p class="label" style="margin-top:12px">' +
+        (abertas.length
+          ? '<a href="#/professor/financeiro">Ver as ' + abertas.length +
+            (abertas.length === 1 ? " mensalidade" : " mensalidades") + " no painel financeiro</a>"
+          : "") +
+        (abertas.length && devendoMaterial.length ? "<br>" : "") +
+        (devendoMaterial.length
+          ? '<a href="#/professor/produtos">' + devendoMaterial.length +
+            (devendoMaterial.length === 1 ? " compra" : " compras") + " de material a receber</a>"
+          : "") +
+        "</p>"
       : "") +
     "</section>" +
     '<section style="margin-bottom:24px"><div class="section-head"><h2 class="section-title">Próximas aulas</h2></div>' +
@@ -589,6 +633,51 @@ function remocaoProduto(p) {
     botao("Excluir", "destructive", "produto-apagar", p.id, { sm: true }) +
     botao("Cancelar", "ghost", "produto-fechar", "", { sm: true }) +
     "</div></li>"
+  );
+}
+
+// Quem está no ateliê agora. Ex-aluno não aparece na lista de venda: se voltar
+// a comprar, é porque voltou, e aí a matrícula é que precisa voltar antes.
+const alunosDoAtelie = () =>
+  dados.perfis
+    .filter((p) => p.papel === "aluno" && dados.matriculas.some((m) => m.aluno_id === p.id))
+    .sort((a, b) => a.nome.localeCompare(b.nome));
+
+// O professor registra a venda que aconteceu na mão: o aluno levou a plastilina
+// e pagou em dinheiro, no pix, ou ainda não pagou. Uma escolha só resolve as
+// duas perguntas — a forma de pagamento vazia é o "ainda não pagou" —, e é
+// também o que o banco cobra: pago_em e forma_pagamento vivem ou morrem juntos.
+function formaVenda(p) {
+  const alunos = alunosDoAtelie();
+  return (
+    '<li class="produto-painel"><form data-forma="venda" data-alvo="' + esc(p.id) + '">' +
+    '<p class="section-title">Registrar venda</p>' +
+    '<p class="micro muted" style="margin-top:4px">' + esc(p.nome) + " · " + reais(p.preco_centavos) +
+    " · " + (p.estoque === 1 ? "1 em estoque" : p.estoque + " em estoque") + "</p>" +
+    (alunos.length
+      ? '<label class="campo"><span class="micro muted">Para quem</span>' +
+        '<select class="input" name="aluno" required>' +
+        alunos.map((a) => '<option value="' + esc(a.id) + '">' + esc(a.nome) + "</option>").join("") +
+        "</select></label>" +
+        '<label class="campo"><span class="micro muted">Quantidade</span>' +
+        '<input class="input" name="quantidade" type="number" min="1" max="' + p.estoque +
+        '" step="1" required value="1"></label>' +
+        // largura inteira: dividindo a linha com a quantidade, "Ainda não pagou"
+        // — que é a opção mais importante de ler — saía cortada no celular
+        '<label class="campo"><span class="micro muted">Pagamento</span>' +
+        '<select class="input" name="forma">' +
+        '<option value="">Ainda não pagou</option>' +
+        Object.keys(FORMAS).map((k) => '<option value="' + k + '">' + esc(FORMAS[k]) + "</option>").join("") +
+        "</select></label>" +
+        '<p class="micro faint" style="margin-top:8px">Sem pagamento, a compra fica em aberto e aparece ' +
+        "nas pendências da home.</p>" +
+        '<div class="produto-acoes">' +
+        '<button type="submit" class="btn btn--primary btn--sm">Registrar</button>' +
+        botao("Cancelar", "ghost", "produto-fechar", "", { sm: true }) +
+        "</div>"
+      : '<p class="micro muted" style="margin-top:12px">Nenhum aluno matriculado para comprar.</p>' +
+        '<div class="produto-acoes">' + botao("Fechar", "ghost", "produto-fechar", "", { sm: true }) + "</div>") +
+    "</form></li>"
   );
 }
 
@@ -668,6 +757,7 @@ function linhaProduto(p) {
     botao("−", "neutral", "baixar-estoque", p.id, { sm: true, desabilitado: p.estoque === 0 }) +
     botao("+", "neutral", "repor-estoque", p.id, { sm: true }) + "</div>" +
     '<div class="produto-acoes">' +
+    botao("Vender", "secondary", "produto-vender", p.id, { sm: true, desabilitado: p.estoque === 0 }) +
     botao("Editar", "ghost", "produto-editar", p.id, { sm: true }) +
     botao("Excluir", "destructive", "produto-remover", p.id, { sm: true }) + "</div></div></li>" +
     (aberto ? vendasProduto(p) : "")
@@ -683,7 +773,9 @@ function telaProdutosProfessor() {
         ? formaProduto(p)
         : painel.modo === "remover"
           ? remocaoProduto(p)
-          : linhaProduto(p)
+          : painel.modo === "vender"
+            ? formaVenda(p)
+            : linhaProduto(p)
   );
   if (painel.modo === "novo") itens.unshift(formaProduto(null));
 
@@ -1610,6 +1702,10 @@ alvoApp.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     return salvarTurma(forma);
   }
+  if (forma.matches('form[data-forma="venda"]')) {
+    ev.preventDefault();
+    return salvarVenda(forma);
+  }
   if (!forma.matches('form[data-forma="produto"]')) return;
   ev.preventDefault();
 
@@ -1629,6 +1725,33 @@ alvoApp.addEventListener("submit", async (ev) => {
     id ? tabela("produtos").atualizar("id=eq." + id, campos) : tabela("produtos").inserir(campos),
     id ? "Produto atualizado." : "Produto criado.");
 });
+
+// A venda que o professor registra na mão. O preço não vai daqui: quem o
+// carimba é o gatilho baixa_estoque, lendo o catálogo — mandar valor pelo
+// cliente seria deixar o navegador dizer quanto custa. Pago e forma andam
+// juntos porque o banco tem um check exigindo exatamente isso.
+async function salvarVenda(forma) {
+  const quantidade = Number(forma.elements.quantidade.value);
+  if (!Number.isInteger(quantidade) || quantidade < 1) {
+    aviso("A quantidade precisa ser pelo menos 1.");
+    return;
+  }
+
+  const escolhida = forma.elements.forma.value;
+  const compra = {
+    produto_id: forma.dataset.alvo,
+    aluno_id: forma.elements.aluno.value,
+    quantidade: quantidade,
+    valor_centavos: 0,
+  };
+  if (escolhida) {
+    compra.pago_em = new Date().toISOString();
+    compra.forma_pagamento = escolhida;
+  }
+
+  return salvar(forma, () => tabela("compras").inserir(compra),
+    escolhida ? "Venda registrada e paga." : "Venda registrada, em aberto.");
+}
 
 // Turma é PATCH/POST direto: os limites que importam — encolher vaga abaixo de
 // quem já está dentro, mudar o dia com falta ou reposição marcada — são gatilho
