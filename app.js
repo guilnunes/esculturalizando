@@ -52,6 +52,8 @@ let painelTurma = null;
 // É separado de painelProduto porque lá o recebimento vive dentro da gaveta de
 // um produto, e aqui a lista é de compras de produtos diferentes.
 let recebendoCompra = null;
+// qual aula está com o formulário de vagas aberto, no calendário do professor
+let painelAula = null;
 
 // As turmas que a tela de cadastro mostra a quem ainda não tem conta.
 let turmasAbertas = [];
@@ -242,6 +244,9 @@ const acoes = {
 
   "produto-novo": () => { painelProduto = { modo: "novo" }; return null; },
   "produto-vender": (id) => { painelProduto = { modo: "vender", id: id }; return null; },
+  "aula-vagas": (id) => { painelAula = id; return null; },
+  "aula-fechar": () => { painelAula = null; return null; },
+
   "compra-receber": (id) => { recebendoCompra = id; return null; },
   "compra-fechar": () => { recebendoCompra = null; return null; },
   "produto-editar": (id) => { painelProduto = { modo: "editar", id: id }; return null; },
@@ -297,7 +302,7 @@ const acoes = {
 const acoesDeTela = new Set([
   "produto-novo", "produto-editar", "produto-remover", "produto-fechar",
   "produto-vendas", "venda-receber", "venda-fechar", "produto-vender",
-  "compra-receber", "compra-fechar",
+  "compra-receber", "compra-fechar", "aula-vagas", "aula-fechar",
   "aluno-novo", "aluno-editar", "aluno-fechar", "aluno-ficha",
   "turma-nova", "turma-editar", "turma-encerrar", "turma-apagar",
   "turma-fechar", "turma-ficha",
@@ -402,6 +407,8 @@ const rodape = () => "";
 function cartaoOcupacao(oc, extra) {
   const t = dados.turmaPorId[oc.turma_id];
   const livres = oc.reposicoes_total - oc.reposicoes_ocupadas;
+  // o que este dia tem além do que a turma dá
+  const extras = oc.reposicoes_total - (t ? t.vagas_reposicao : oc.reposicoes_total);
   return (
     '<article class="card card--calendario' + (oc.cancelada ? " card--cancelada" : "") + '"><p>' +
     esc(t ? t.nome : "Turma") + '</p>' +
@@ -421,6 +428,11 @@ function cartaoOcupacao(oc, extra) {
           ? '<p class="inline-note micro muted" style="margin-top:12px">' +
             icone("circle-plus", "icon--sm icon--clay") +
             (livres === 1 ? "1 vaga de reposição livre" : livres + " vagas de reposição livres") + "</p>"
+          : "") +
+        (extras > 0
+          ? '<p class="inline-note micro muted" style="margin-top:8px">' +
+            icone("calendar-plus", "icon--sm icon--clay") +
+            (extras === 1 ? "1 vaga a mais só neste dia" : extras + " vagas a mais só neste dia") + "</p>"
           : "")) +
     (extra || "") + "</article>"
   );
@@ -1017,6 +1029,28 @@ function telaAlunosProfessor() {
   );
 }
 
+// As vagas de reposição de um dia só. A turma diz quantas cada aula tem; aqui o
+// professor abre mais para aquela data, sem mexer nas outras — e as extras não
+// se somam à turma, ficam na aula.
+function formaVagasDaAula(oc) {
+  const t = dados.turmaPorId[oc.turma_id];
+  const base = t ? t.vagas_reposicao : 0;
+  const extras = oc.reposicoes_total - base;
+  return (
+    '<form data-forma="aula" data-alvo="' + esc(oc.aula_id) + '" style="margin-top:12px">' +
+    '<label class="campo"><span class="micro muted">Vagas de reposição a mais neste dia</span>' +
+    '<input class="input" name="extras" type="number" min="0" max="20" step="1" required value="' +
+    extras + '"></label>' +
+    '<p class="micro faint" style="margin-top:8px">A turma dá ' + base +
+    (base === 1 ? " vaga" : " vagas") + " em toda aula. O que você puser aqui vale só para " +
+    dataCurta(oc.data) + ", e as outras aulas seguem como estão.</p>" +
+    '<div class="produto-acoes">' +
+    '<button type="submit" class="btn btn--primary btn--sm">Salvar</button>' +
+    botao("Cancelar", "ghost", "aula-fechar", "", { sm: true }) +
+    "</div></form>"
+  );
+}
+
 function telaCalendarioProfessor() {
   return (
     topo("Calendário", "professor") +
@@ -1035,11 +1069,17 @@ function telaCalendarioProfessor() {
           ? '<p class="inline-note micro muted" style="margin-top:8px">' + icone("calendar-plus", "icon--sm") +
             "Reposição: " + esc(repositores.join(", ")) + "</p>"
           : "");
-      const botaoDaAula = oc.cancelada
+      if (painelAula === oc.aula_id) {
+        return cartaoOcupacao(oc, extra + formaVagasDaAula(oc));
+      }
+      const acoes = oc.cancelada
         ? botao("Reabrir aula", "secondary", "reabrir-aula", oc.aula_id, { full: true })
-        : botao("Cancelar aula", "neutral", "cancelar-aula", oc.aula_id,
-                { full: true, icone: "calendar-x" });
-      return cartaoOcupacao(oc, extra + '<div style="margin-top:12px">' + botaoDaAula + "</div>");
+        : botao("Vagas de reposição", "secondary", "aula-vagas", oc.aula_id,
+                { full: true, icone: "calendar-plus" }) +
+          '<div style="margin-top:8px">' +
+          botao("Cancelar aula", "neutral", "cancelar-aula", oc.aula_id,
+                { full: true, icone: "calendar-x" }) + "</div>";
+      return cartaoOcupacao(oc, extra + '<div style="margin-top:12px">' + acoes + "</div>");
     }).join("") + "</div>"
   );
 }
@@ -1660,7 +1700,7 @@ async function render(erroLogin) {
   const trocou = rota !== rotaAnterior;
   if (trocou) {
     painelProduto = null; painelAluno = null; painelTurma = null;
-    recebendoCompra = null; menuUsuario = false;
+    recebendoCompra = null; painelAula = null; menuUsuario = false;
   }
   // Os dois papéis navegam pela mesma barra de baixo; só as áreas mudam.
   alvoApp.classList.add("shell--abas", "shell--topo");
@@ -1814,6 +1854,18 @@ alvoApp.addEventListener("submit", async (ev) => {
   if (forma.matches('form[data-forma="venda"]')) {
     ev.preventDefault();
     return salvarVenda(forma);
+  }
+  if (forma.matches('form[data-forma="aula"]')) {
+    ev.preventDefault();
+    const extras = Number(forma.elements.extras.value);
+    if (!Number.isInteger(extras) || extras < 0) {
+      aviso("As vagas a mais precisam ser um número de 0 para cima.");
+      return;
+    }
+    return salvar(forma, () =>
+      tabela("aulas").atualizar("id=eq." + forma.dataset.alvo, { vagas_reposicao_extras: extras }),
+      extras ? "Vagas abertas neste dia." : "Vagas a mais retiradas deste dia.",
+      null, () => { painelAula = null; });
   }
   if (!forma.matches('form[data-forma="produto"]')) return;
   ev.preventDefault();
