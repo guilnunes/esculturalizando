@@ -803,6 +803,11 @@ ul {
   padding: 12px;
 }
 
+/* aula cancelada: a borda diz o que houve antes de qualquer texto ser lido */
+.card--cancelada {
+  border-color: var(--clay-deep);
+}
+
 /* o quadro de atrasos só se acende quando há atraso: um número em vermelho
    que está sempre lá deixa de ser aviso e vira decoração */
 .tally--atraso {

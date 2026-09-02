@@ -30,6 +30,7 @@ function hoje() {
   return d;
 }
 
+const ehHoje = (data) => data === isoHoje();
 const isoHoje = () => {
   const d = hoje();
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
@@ -174,6 +175,14 @@ const acoes = {
   "declarar-pagamento": (mensalidadeId) =>
     tabela("pagamentos").inserir({ mensalidade_id: mensalidadeId })
       .then(() => "Pagamento informado. O ateliê vai confirmar."),
+
+  "cancelar-aula": (aulaId) =>
+    tabela("aulas").atualizar("id=eq." + aulaId, { cancelada_em: new Date().toISOString() })
+      .then(() => "Aula cancelada. Quem tinha aula ganhou um crédito de reposição."),
+
+  "reabrir-aula": (aulaId) =>
+    tabela("aulas").atualizar("id=eq." + aulaId, { cancelada_em: null })
+      .then(() => "Aula de volta ao calendário."),
 
   "confirmar-pagamento": (pagamentoId) =>
     tabela("pagamentos").atualizar("id=eq." + pagamentoId, { confirmado_em: new Date().toISOString() })
@@ -394,18 +403,25 @@ function cartaoOcupacao(oc, extra) {
   const t = dados.turmaPorId[oc.turma_id];
   const livres = oc.reposicoes_total - oc.reposicoes_ocupadas;
   return (
-    '<article class="card card--calendario"><p>' + esc(t ? t.nome : "Turma") + '</p>' +
+    '<article class="card card--calendario' + (oc.cancelada ? " card--cancelada" : "") + '"><p>' +
+    esc(t ? t.nome : "Turma") + '</p>' +
     '<p class="label muted">' + esc(diaSemana(oc.data)) + ", " + dataCurta(oc.data) +
-    (t ? " · " + esc(t.horario) : "") + "</p>" +
-    '<div class="grid-2" style="margin-top:12px">' +
-    '<div class="tally"><p class="micro muted">Vagas regulares</p><p class="tally-value">' +
-    oc.regulares_ocupadas + " de " + oc.regulares_total + "</p></div>" +
-    '<div class="tally"><p class="micro muted">Vagas de reposição</p><p class="tally-value">' +
-    oc.reposicoes_ocupadas + " de " + oc.reposicoes_total + "</p></div></div>" +
-    (livres > 0
-      ? '<p class="inline-note micro muted" style="margin-top:12px">' + icone("circle-plus", "icon--sm icon--clay") +
-        (livres === 1 ? "1 vaga de reposição livre" : livres + " vagas de reposição livres") + "</p>"
-      : "") +
+    (t ? " · " + esc(t.horario) : "") + (ehHoje(oc.data) ? " · hoje" : "") + "</p>" +
+    // numa aula cancelada as vagas não querem dizer nada: o que importa é que
+    // ela não vai acontecer, e que o crédito já foi para quem tinha aula
+    (oc.cancelada
+      ? '<p class="inline-note label" style="margin-top:12px;color:var(--clay)">' +
+        icone("calendar-x", "icon--clay") + "Aula cancelada</p>"
+      : '<div class="grid-2" style="margin-top:12px">' +
+        '<div class="tally"><p class="micro muted">Vagas regulares</p><p class="tally-value">' +
+        oc.regulares_ocupadas + " de " + oc.regulares_total + "</p></div>" +
+        '<div class="tally"><p class="micro muted">Vagas de reposição</p><p class="tally-value">' +
+        oc.reposicoes_ocupadas + " de " + oc.reposicoes_total + "</p></div></div>" +
+        (livres > 0
+          ? '<p class="inline-note micro muted" style="margin-top:12px">' +
+            icone("circle-plus", "icon--sm icon--clay") +
+            (livres === 1 ? "1 vaga de reposição livre" : livres + " vagas de reposição livres") + "</p>"
+          : "")) +
     (extra || "") + "</article>"
   );
 }
@@ -809,9 +825,23 @@ function telaProdutosProfessor() {
 const turmasDe = (alunoId) =>
   dados.matriculas.filter((m) => m.aluno_id === alunoId).map((m) => dados.turmaPorId[m.turma_id]).filter(Boolean);
 
-const creditosDe = (alunoId) =>
-  dados.faltas.filter((f) => f.aluno_id === alunoId).length -
-  dados.reposicoes.filter((r) => r.aluno_id === alunoId).length;
+// O mesmo cálculo de regras.creditos_de, para o professor ver o saldo de um
+// aluno na ficha. Quem manda é o banco; isto aqui só precisa não mentir.
+// Sai de dados.aulas, e não de dados.ocupacao: a ocupação só enxerga de hoje
+// em diante, e uma aula cancelada hoje sumiria dela amanhã — o crédito
+// desapareceria da tela sem ter desaparecido do banco.
+const creditosDe = (alunoId) => {
+  const faltas = dados.faltas.filter((f) => f.aluno_id === alunoId);
+  const minhasTurmas = dados.matriculas.filter((m) => m.aluno_id === alunoId).map((m) => m.turma_id);
+  const porCancelamento = dados.aulas.filter((a) =>
+    a.cancelada_em && minhasTurmas.includes(a.turma_id) &&
+    !faltas.some((f) => f.aula_id === a.id)).length;
+  const gastas = dados.reposicoes.filter((r) => {
+    const a = dados.aulaPorId[r.aula_id];
+    return r.aluno_id === alunoId && a && !a.cancelada_em;
+  }).length;
+  return faltas.length + porCancelamento - gastas;
+};
 
 const ocupadasEm = (turmaId) => dados.matriculas.filter((m) => m.turma_id === turmaId).length;
 
@@ -1005,7 +1035,11 @@ function telaCalendarioProfessor() {
           ? '<p class="inline-note micro muted" style="margin-top:8px">' + icone("calendar-plus", "icon--sm") +
             "Reposição: " + esc(repositores.join(", ")) + "</p>"
           : "");
-      return cartaoOcupacao(oc, extra);
+      const botaoDaAula = oc.cancelada
+        ? botao("Reabrir aula", "secondary", "reabrir-aula", oc.aula_id, { full: true })
+        : botao("Cancelar aula", "neutral", "cancelar-aula", oc.aula_id,
+                { full: true, icone: "calendar-x" });
+      return cartaoOcupacao(oc, extra + '<div style="margin-top:12px">' + botaoDaAula + "</div>");
     }).join("") + "</div>"
   );
 }
@@ -1291,13 +1325,22 @@ function telaAluno() {
         cartaoPagamento(atraso, declaradoAtraso, "primary") + "</div>"
       : "") +
     (proxima
-      ? '<article class="card card--calendario"><p class="label muted">Próxima aula</p>' +
+      ? '<article class="card card--calendario' + (proxima.cancelada ? " card--cancelada" : "") + '">' +
+        '<p class="label muted">Próxima aula</p>' +
         '<p class="heading" style="margin-top:4px">' + esc(diaSemana(proxima.data)) + ", " + dataCurta(proxima.data) + "</p>" +
-        '<p class="label muted" style="margin-top:4px">' + esc(t.nome) + " · " + esc(t.horario) + "</p>" +
-        (falta
-          ? '<p class="inline-note label" style="margin-top:12px;color:var(--clay)">' + icone("calendar-x") + "Falta avisada</p>" +
-            botao("Cancelar aviso", "neutral", "desfazer-falta", falta.id, { full: true })
-          : botao("Vou faltar", "secondary", "avisar-falta", proxima.aula_id, { full: true, icone: "calendar-x" })) +
+        '<p class="label muted" style="margin-top:4px">' + esc(t.nome) + " · " + esc(t.horario) +
+        (ehHoje(proxima.data) && !proxima.cancelada ? " · é hoje" : "") + "</p>" +
+        // cancelada: o crédito já é dele, e não há mais o que avisar.
+        // hoje: o aviso de falta vale antes da aula, e o banco recusaria.
+        (proxima.cancelada
+          ? '<p class="inline-note label" style="margin-top:12px;color:var(--clay)">' +
+            icone("calendar-x") + "O ateliê cancelou: você ganhou um crédito de reposição.</p>"
+          : falta
+            ? '<p class="inline-note label" style="margin-top:12px;color:var(--clay)">' + icone("calendar-x") + "Falta avisada</p>" +
+              botao("Cancelar aviso", "neutral", "desfazer-falta", falta.id, { full: true })
+            : ehHoje(proxima.data)
+              ? '<p class="micro faint" style="margin-top:12px">O aviso de falta vale até a véspera.</p>'
+              : botao("Vou faltar", "secondary", "avisar-falta", proxima.aula_id, { full: true, icone: "calendar-x" })) +
         "</article>"
       : "") +
     (aberta
@@ -1364,10 +1407,16 @@ function telaAulasAluno() {
   const marcadas = dados.reposicoes.filter((r) => r.aluno_id === dados.eu);
   const idsMarcados = marcadas.map((r) => r.aula_id);
   const meusFaltados = dados.faltas.filter((f) => f.aluno_id === dados.eu).map((f) => f.aula_id);
-  const livres = dados.ocupacao.filter(
+  // aula cancelada não recebe reposição, e a de hoje já passou do prazo de
+  // marcar: o banco recusa as duas, e oferecê-las aqui seria oferecer um erro
+  const todasLivres = dados.ocupacao.filter(
     (oc) => !idsMarcados.includes(oc.aula_id) && !meusFaltados.includes(oc.aula_id) &&
+            !oc.cancelada && oc.data > isoHoje() &&
             oc.reposicoes_ocupadas < oc.reposicoes_total,
   );
+  // são umas trinta no período, e ninguém marca reposição para novembro em
+  // setembro: as próximas bastam, como nas aulas dela logo acima
+  const livres = todasLivres.slice(0, 6);
 
   const quando = (oc) => {
     const t = dados.turmaPorId[oc.turma_id];
@@ -1376,11 +1425,23 @@ function telaAulasAluno() {
   };
 
   const linha = (oc, acao, rotulo, variante, alvo) =>
-    "<li>" + quando(oc) + " · reposição " + oc.reposicoes_ocupadas + " de " + oc.reposicoes_total +
-    "</p></div>" + botao(rotulo, variante, acao, alvo, { sm: true }) + "</li>";
+    "<li>" + quando(oc) +
+    (oc.cancelada
+      ? " · aula cancelada, crédito devolvido</p></div>"
+      : " · reposição " + oc.reposicoes_ocupadas + " de " + oc.reposicoes_total + "</p></div>" +
+        botao(rotulo, variante, acao, alvo, { sm: true })) +
+    "</li>";
 
   const linhaMinha = (oc) => {
     const falta = dados.faltas.find((f) => f.aula_id === oc.aula_id && f.aluno_id === dados.eu);
+    if (oc.cancelada) {
+      return "<li>" + quando(oc) + " · cancelada pelo ateliê</p></div>" +
+        '<span class="chip chip--atraso">' + icone("calendar-x", "icon--sm") + "crédito seu</span></li>";
+    }
+    if (ehHoje(oc.data)) {
+      return "<li>" + quando(oc) + " · é hoje</p></div>" +
+        '<span class="chip">hoje</span></li>';
+    }
     return "<li>" + quando(oc) + (falta ? " · falta avisada" : "") + "</p></div>" +
       (falta
         ? botao("Desfazer", "neutral", "desfazer-falta", falta.id, { sm: true })
@@ -1422,7 +1483,12 @@ function telaAulasAluno() {
       ? vazio("calendar-plus", "Nada a marcar", "Sem crédito, não há reposição para escolher.")
       : livres.length
         ? '<div class="card card--calendario"><ul class="rows">' +
-          livres.map((oc) => linha(oc, "marcar-reposicao", "Marcar", "neutral", oc.aula_id)).join("") + "</ul></div>"
+          livres.map((oc) => linha(oc, "marcar-reposicao", "Marcar", "neutral", oc.aula_id)).join("") +
+          "</ul></div>" +
+          (todasLivres.length > livres.length
+            ? '<p class="micro muted" style="margin-top:8px">mais ' +
+              (todasLivres.length - livres.length) + " no período</p>"
+            : "")
         : vazio("calendar-plus", "Sem vaga de reposição", "As aulas do período estão com as vagas de reposição ocupadas.")) +
     "</section>"
   );
