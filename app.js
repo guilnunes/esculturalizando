@@ -47,6 +47,10 @@ let rotaAnterior = null;
 let painelProduto = null;
 let painelAluno = null;
 let painelTurma = null;
+// qual compra está com o formulário de recebimento aberto no painel financeiro.
+// É separado de painelProduto porque lá o recebimento vive dentro da gaveta de
+// um produto, e aqui a lista é de compras de produtos diferentes.
+let recebendoCompra = null;
 
 // As turmas que a tela de cadastro mostra a quem ainda não tem conta.
 let turmasAbertas = [];
@@ -229,6 +233,8 @@ const acoes = {
 
   "produto-novo": () => { painelProduto = { modo: "novo" }; return null; },
   "produto-vender": (id) => { painelProduto = { modo: "vender", id: id }; return null; },
+  "compra-receber": (id) => { recebendoCompra = id; return null; },
+  "compra-fechar": () => { recebendoCompra = null; return null; },
   "produto-editar": (id) => { painelProduto = { modo: "editar", id: id }; return null; },
   "produto-remover": (id) => { painelProduto = { modo: "remover", id: id }; return null; },
   "produto-fechar": () => { painelProduto = null; return null; },
@@ -282,6 +288,7 @@ const acoes = {
 const acoesDeTela = new Set([
   "produto-novo", "produto-editar", "produto-remover", "produto-fechar",
   "produto-vendas", "venda-receber", "venda-fechar", "produto-vender",
+  "compra-receber", "compra-fechar",
   "aluno-novo", "aluno-editar", "aluno-fechar", "aluno-ficha",
   "turma-nova", "turma-editar", "turma-encerrar", "turma-apagar",
   "turma-fechar", "turma-ficha",
@@ -533,7 +540,7 @@ function telaSenha() {
 // O aluno leva a plastilina para usar na aula e acerta depois: a compra em
 // aberto é uma pendência tanto quanto a mensalidade, e some da vista se a home
 // só olhar para mensalidade.
-function linhaCompraPendente(c) {
+function linhaCompraPendente(c, comAcao) {
   const atrasada = statusCompra(c) === "atrasado";
   const produto = dados.produtoPorId[c.produto_id];
   const quem = nomeDe(c.aluno_id);
@@ -545,7 +552,9 @@ function linhaCompraPendente(c) {
     esc(produto ? produto.nome : "Material do ateliê") +
     (c.quantidade > 1 ? " · " + c.quantidade + " un" : "") +
     " · " + (atrasada ? "levou em " + dataCurta(c.criada_em) : "levou hoje") + "</p></div>" +
-    '<div class="row-side">' + dinheiro(c.valor_centavos, atrasada ? "heading" : "muted") + "</div></li>"
+    '<div class="row-side">' + dinheiro(c.valor_centavos, atrasada ? "heading" : "muted") +
+    (comAcao ? botao("Receber", "neutral", "compra-receber", c.id, { sm: true }) : "") +
+    "</div></li>"
   );
 }
 
@@ -703,11 +712,16 @@ function linhaVenda(c) {
   );
 }
 
-function formaRecebimento(c) {
+// Serve à gaveta do produto e à lista do financeiro; o que muda entre as duas é
+// para onde o Cancelar volta, e se o nome do produto precisa ser dito (na gaveta
+// ele é o título, aqui a lista mistura produtos).
+function formaRecebimento(c, acaoFechar) {
+  const produto = acaoFechar ? dados.produtoPorId[c.produto_id] : null;
   return (
     '<li class="venda venda--painel"><form data-forma="recebimento" data-alvo="' + esc(c.id) + '">' +
     '<p class="section-title">Receber de ' + esc(nomeDe(c.aluno_id)) + "</p>" +
-    '<p class="micro muted" style="margin-top:4px">' + reais(c.valor_centavos) + " · comprado em " +
+    '<p class="micro muted" style="margin-top:4px">' +
+    (produto ? esc(produto.nome) + " · " : "") + reais(c.valor_centavos) + " · comprado em " +
     dataCurta(c.criada_em) + "</p>" +
     '<label class="campo"><span class="micro muted">Como o aluno pagou</span>' +
     '<select class="input" name="forma" required>' +
@@ -715,7 +729,7 @@ function formaRecebimento(c) {
     "</select></label>" +
     '<div class="produto-acoes">' +
     '<button type="submit" class="btn btn--primary btn--sm">Confirmar</button>' +
-    botao("Cancelar", "ghost", "venda-fechar", "", { sm: true }) +
+    botao("Cancelar", "ghost", acaoFechar || "venda-fechar", "", { sm: true }) +
     "</div></form></li>"
   );
 }
@@ -1175,6 +1189,14 @@ function telaFinanceiroProfessor() {
   const adiante = abertas.filter((m) => statusDe(m) !== "atrasado" && m.vencimento.slice(0, 7) > esteMes);
   const soma = (lista) => lista.reduce((t, m) => t + m.valor_centavos, 0);
   const vendido = dados.compras.reduce((s, c) => s + c.valor_centavos, 0);
+
+  // material levado e não pago: dívida como as outras, e até aqui só se via na
+  // gaveta de cada produto, um por um
+  const material = dados.compras.filter((c) => !c.pago_em).sort((a, b) =>
+    (statusCompra(a) === "atrasado" ? 0 : 1) - (statusCompra(b) === "atrasado" ? 0 : 1) ||
+    a.vencimento.localeCompare(b.vencimento) ||
+    nomeDe(a.aluno_id).localeCompare(nomeDe(b.aluno_id)));
+
   const aguardando = abertas.filter((m) => { const p = pagamentoDe(m.id); return p && !p.confirmado_em; });
   const atrasadas = abertas.filter((m) => statusDe(m) === "atrasado" && !aguardando.includes(m));
   const aVencer = abertas.filter((m) => statusDe(m) === "aberto" && !aguardando.includes(m));
@@ -1210,10 +1232,20 @@ function telaFinanceiroProfessor() {
     bloco("Aguardando sua confirmação", aguardando) +
     bloco("Em atraso", atrasadas) +
     bloco("A vencer", aVencer) +
-    (abertas.length
+    (material.length
+      ? '<section style="margin-bottom:24px"><div class="section-head">' +
+        '<h2 class="section-title">Material a receber</h2>' +
+        '<p class="micro muted">' + reais(soma(material)) + "</p></div>" +
+        '<div class="card card--produto"><ul class="rows">' +
+        material.map((c) => (recebendoCompra === c.id
+          ? formaRecebimento(c, "compra-fechar")
+          : linhaCompraPendente(c, true))).join("") +
+        "</ul></div></section>"
+      : "") +
+    (abertas.length || material.length
       ? ""
       : '<div style="margin-bottom:24px">' +
-        vazio("check", "Nada em aberto", "Todas as mensalidades lançadas estão quitadas.") + "</div>") +
+        vazio("check", "Nada em aberto", "Mensalidades e material estão quitados.") + "</div>") +
     (recebidas.length
       ? '<section><div class="section-head"><h2 class="section-title">Já recebidas</h2>' +
         '<p class="micro muted">' + reais(entrou) + "</p></div>" +
@@ -1558,7 +1590,10 @@ async function render(erroLogin) {
   }
 
   const trocou = rota !== rotaAnterior;
-  if (trocou) { painelProduto = null; painelAluno = null; painelTurma = null; menuUsuario = false; }
+  if (trocou) {
+    painelProduto = null; painelAluno = null; painelTurma = null;
+    recebendoCompra = null; menuUsuario = false;
+  }
   // Os dois papéis navegam pela mesma barra de baixo; só as áreas mudam.
   alvoApp.classList.add("shell--abas", "shell--topo");
   alvoApp.innerHTML = barraTopo() + ROTAS[rota]() + rodape() + abas(rota);
@@ -1667,13 +1702,19 @@ alvoApp.addEventListener("submit", async (ev) => {
   const forma = ev.target;
   if (forma.matches('form[data-forma="recebimento"]')) {
     ev.preventDefault();
-    // o professor está lendo o histórico: registrar não pode fechar o painel
-    const aberto = { modo: "vendas", id: painelProduto.id };
-    return salvar(forma, () =>
+    const receber = () =>
       tabela("compras").atualizar("id=eq." + forma.dataset.alvo, {
         pago_em: new Date().toISOString(),
         forma_pagamento: forma.elements.forma.value,
-      }), "Recebimento registrado.", aberto);
+      });
+    // no painel financeiro a compra sai da lista sozinha, ao ser paga; na gaveta
+    // do produto o professor está lendo o histórico, e registrar não pode fechá-la
+    if (recebendoCompra) {
+      return salvar(forma, receber, "Recebimento registrado.", null,
+        () => { recebendoCompra = null; });
+    }
+    return salvar(forma, receber, "Recebimento registrado.",
+      { modo: "vendas", id: painelProduto.id });
   }
   if (forma.matches('form[data-forma="conta"]')) {
     ev.preventDefault();
