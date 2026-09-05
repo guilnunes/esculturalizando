@@ -613,6 +613,24 @@ ul {
   color: var(--clay);
 }
 
+/* uma marca curta não deve quebrar no meio: ou cabe na linha, ou desce inteira */
+.sem-quebra {
+  white-space: nowrap;
+}
+
+/* O ponto ao lado do nome do produto: diz que há venda vencida lá dentro sem
+   obrigar a abrir a gaveta. É pequeno de propósito — quem explica é a linha de
+   baixo, e o ponto só chama o olho ao correr a lista. */
+.ponto-atraso {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 8px;
+  border-radius: var(--r-full);
+  background: var(--clay);
+  vertical-align: middle;
+}
+
 .row-main {
   flex: 1;
   min-width: 0;

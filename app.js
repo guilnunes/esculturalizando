@@ -784,9 +784,11 @@ function vendasProduto(p) {
 }
 
 function linhaProduto(p) {
-  const vendidos = dados.compras
-    .filter((c) => c.produto_id === p.id)
-    .reduce((s, c) => s + c.quantidade, 0);
+  const vendas = dados.compras.filter((c) => c.produto_id === p.id);
+  const vendidos = vendas.reduce((s, c) => s + c.quantidade, 0);
+  // o que este produto tem de dívida vencida lá dentro, para o professor não
+  // precisar abrir um por um até achar
+  const vencidas = vendas.filter((c) => statusCompra(c) === "atrasado").length;
   const aberto = painelProduto && painelProduto.modo === "vendas" && painelProduto.id === p.id;
 
   return (
@@ -794,9 +796,16 @@ function linhaProduto(p) {
     '<button type="button" class="produto-toque" data-acao="produto-vendas" data-alvo="' + esc(p.id) +
     '" aria-expanded="' + aberto + '">' +
     '<span class="icon-circle">' + icone(p.estoque === 0 ? "package-x" : "package", "icon--lg") + "</span>" +
-    '<span class="row-main"><span class="row-name">' + esc(p.nome) + '</span><span class="micro muted">' +
+    '<span class="row-main"><span class="row-name">' + esc(p.nome) +
+    (vencidas
+      ? '<span class="ponto-atraso" role="img" aria-label="' + vencidas +
+        (vencidas === 1 ? " venda em atraso" : " vendas em atraso") + '"></span>'
+      : "") +
+    '</span><span class="micro muted">' +
     reais(p.preco_centavos) + " · " + (p.estoque === 0 ? "sem estoque" : p.estoque + " em estoque") +
-    (vendidos ? " · " + vendidos + (vendidos === 1 ? " vendido" : " vendidos") : "") + "</span></span>" +
+    (vendidos ? " · " + vendidos + (vendidos === 1 ? " vendido" : " vendidos") : "") +
+    (vencidas ? ' <span class="nota--atraso sem-quebra">· ' + vencidas + " em atraso</span>" : "") +
+    "</span></span>" +
     icone("chevron-down", "icon--seta") + "</button>" +
     '<div class="produto-barra"><div class="produto-estoque">' +
     botao("−", "neutral", "baixar-estoque", p.id, { sm: true, desabilitado: p.estoque === 0 }) +
@@ -1257,22 +1266,36 @@ function telaFinanceiroProfessor() {
     .slice().sort((a, b) => (a.pago_em > b.pago_em ? -1 : 1));
   const entrou = recebidas.reduce((soma, m) => soma + m.valor_centavos, 0);
 
-  // O que falta receber se divide no tempo, não no trâmite: o que ainda vence
-  // neste mês, e o que já passou do prazo. Um punhado vence num mês à frente —
-  // é a primeira cobrança de quem entrou tarde — e não cabe em nenhum dos dois.
-  const esteMes = isoHoje().slice(0, 7);
-  const vencidas = abertas.filter((m) => statusDe(m) === "atrasado");
-  const doMes = abertas.filter((m) => statusDe(m) !== "atrasado" && m.vencimento.slice(0, 7) === esteMes);
-  const adiante = abertas.filter((m) => statusDe(m) !== "atrasado" && m.vencimento.slice(0, 7) > esteMes);
-  const soma = (lista) => lista.reduce((t, m) => t + m.valor_centavos, 0);
-  const vendido = dados.compras.reduce((s, c) => s + c.valor_centavos, 0);
-
-  // material levado e não pago: dívida como as outras, e até aqui só se via na
-  // gaveta de cada produto, um por um
+  // material levado e não pago: dívida como as outras
   const material = dados.compras.filter((c) => !c.pago_em).sort((a, b) =>
     (statusCompra(a) === "atrasado" ? 0 : 1) - (statusCompra(b) === "atrasado" ? 0 : 1) ||
     a.vencimento.localeCompare(b.vencimento) ||
     nomeDe(a.aluno_id).localeCompare(nomeDe(b.aluno_id)));
+
+  // O que falta receber se divide no tempo, não no trâmite: o que ainda vence
+  // neste mês, e o que já passou do prazo. Um punhado vence num mês à frente —
+  // é a primeira cobrança de quem entrou tarde — e não cabe em nenhum dos dois.
+  //
+  // Mensalidade e material entram nos mesmos dois números: a pergunta que o
+  // quadro responde é quanto o ateliê tem a receber, e material fiado é dívida
+  // igual. Quem é quem fica na linha logo abaixo, e nas seções.
+  const esteMes = isoHoje().slice(0, 7);
+  const noMes = (x) => statusCompra(x) !== "atrasado" && x.vencimento.slice(0, 7) === esteMes;
+  const naFrente = (x) => statusCompra(x) !== "atrasado" && x.vencimento.slice(0, 7) > esteMes;
+  const soma = (lista) => lista.reduce((t, x) => t + x.valor_centavos, 0);
+
+  const vencidas = abertas.filter((m) => statusDe(m) === "atrasado");
+  const doMes = abertas.filter(noMes);
+  const adiante = abertas.filter(naFrente);
+  const materialVencido = material.filter((c) => statusCompra(c) === "atrasado");
+  const materialDoMes = material.filter(noMes);
+  const materialAdiante = material.filter(naFrente);
+
+  const aVencerAgora = soma(doMes) + soma(materialDoMes);
+  const emAtraso = soma(vencidas) + soma(materialVencido);
+  const quantosVencidos = vencidas.length + materialVencido.length;
+  const quantosDoMes = doMes.length + materialDoMes.length;
+  const depois = soma(adiante) + soma(materialAdiante);
 
   const aguardando = abertas.filter((m) => { const p = pagamentoDe(m.id); return p && !p.confirmado_em; });
   const atrasadas = abertas.filter((m) => statusDe(m) === "atrasado" && !aguardando.includes(m));
@@ -1288,37 +1311,43 @@ function telaFinanceiroProfessor() {
   return (
     topo("Financeiro", "professor") +
     '<div class="card card--financeiro" style="margin-bottom:24px">' +
-    '<p class="label muted">A receber em mensalidades</p>' +
+    '<p class="label muted">A receber</p>' +
     '<div class="grid-2" style="margin-top:12px">' +
     '<div class="tally"><p class="micro muted">Mês atual</p>' +
-    dinheiro(soma(doMes), "money--mid") +
-    '<p class="micro muted" style="margin-top:4px">' + doMes.length +
-    (doMes.length === 1 ? " a vencer" : " a vencer") + "</p></div>" +
-    '<div class="tally' + (vencidas.length ? " tally--atraso" : "") + '">' +
+    dinheiro(aVencerAgora, "money--mid") +
+    '<p class="micro muted" style="margin-top:4px">' + quantosDoMes + " a vencer</p></div>" +
+    '<div class="tally' + (quantosVencidos ? " tally--atraso" : "") + '">' +
     '<p class="micro muted">Atrasos</p>' +
-    dinheiro(soma(vencidas), "money--mid") +
-    '<p class="micro muted" style="margin-top:4px">' + vencidas.length +
-    (vencidas.length === 1 ? " vencida" : " vencidas") + "</p></div>" +
+    dinheiro(emAtraso, "money--mid") +
+    '<p class="micro ' + (quantosVencidos ? "nota--atraso" : "muted") + '" style="margin-top:4px">' +
+    quantosVencidos + (quantosVencidos === 1 ? " vencido" : " vencidos") + "</p></div>" +
     "</div>" +
-    (adiante.length
-      ? '<p class="micro muted" style="margin-top:12px">Mais ' + reais(soma(adiante)) +
+    '<p class="micro muted" style="margin-top:12px">' +
+    reais(soma(abertas)) + " em mensalidades · " + reais(soma(material)) + " em material" +
+    (materialVencido.length
+      ? ', <span class="nota--atraso">' + reais(soma(materialVencido)) + " em atraso</span>"
+      : "") + "</p>" +
+    (depois
+      ? '<p class="micro muted" style="margin-top:8px">Mais ' + reais(depois) +
         " vencendo nos meses à frente.</p>"
       : "") +
-    '<p class="micro muted" style="margin-top:12px">' + reais(vendido) +
-    " vendido em material</p></div>" +
+    "</div>" +
     bloco("Aguardando sua confirmação", aguardando) +
     bloco("Em atraso", atrasadas, true) +
-    bloco("A vencer", aVencer) +
+    // antes de "A vencer": material fiado é dinheiro que já saiu do ateliê, e
+    // ficava embaixo de vinte mensalidades que ainda nem venceram
     (material.length
       ? '<section style="margin-bottom:24px"><div class="section-head">' +
         '<h2 class="section-title">Material a receber</h2>' +
-        '<p class="micro muted">' + reais(soma(material)) + "</p></div>" +
+        '<p class="micro ' + (materialVencido.length ? "chip chip--atraso" : "muted") + '">' +
+        reais(soma(material)) + "</p></div>" +
         '<div class="card card--produto"><ul class="rows">' +
         material.map((c) => (recebendoCompra === c.id
           ? formaRecebimento(c, "compra-fechar")
           : linhaCompraPendente(c, true))).join("") +
         "</ul></div></section>"
       : "") +
+    bloco("A vencer", aVencer) +
     (abertas.length || material.length
       ? ""
       : '<div style="margin-bottom:24px">' +
