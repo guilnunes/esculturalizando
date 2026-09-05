@@ -448,7 +448,7 @@ function linhaMensalidade(m, comAcao) {
   const abaixo = paga
     ? '<p class="inline-note micro muted">' + icone("check", "icon--sm icon--ok") +
       "Pago em " + dataCurta(m.pago_em) + "</p>"
-    : '<p class="inline-note micro muted">' +
+    : '<p class="inline-note micro ' + (atrasada ? "nota--atraso" : "muted") + '">' +
       icone(atrasada ? "alert-circle" : "clock", "icon--sm " + (atrasada ? "icon--clay" : "icon--warn")) +
       (atrasada ? "Venceu" : "Vence") + " em " + dataCurta(m.vencimento) +
       (declarado && !declarado.confirmado_em ? " · informou pagamento" : "") + "</p>";
@@ -460,10 +460,12 @@ function linhaMensalidade(m, comAcao) {
       : botao("Marcar paga", "neutral", "marcar-paga", m.id, { sm: true });
 
   return (
-    "<li>" + avatar(nomeDe(m.aluno_id), true) +
+    '<li' + (atrasada ? ' class="row--atraso"' : "") + ">" + avatar(nomeDe(m.aluno_id), true) +
     '<div class="row-main"><p class="row-name">' + esc(nomeDe(m.aluno_id)) + "</p>" +
     abaixo + "</div>" +
-    '<div class="row-side">' + dinheiro(m.valor_centavos, atrasada ? "heading" : "muted") + acao + "</div></li>"
+    '<div class="row-side">' +
+    dinheiro(m.valor_centavos, atrasada ? "heading money--atraso" : "muted") +
+    acao + "</div></li>"
   );
 }
 
@@ -573,14 +575,15 @@ function linhaCompraPendente(c, comAcao) {
   const produto = dados.produtoPorId[c.produto_id];
   const quem = nomeDe(c.aluno_id);
   return (
-    "<li>" + avatar(quem, true) +
+    '<li' + (atrasada ? ' class="row--atraso"' : "") + ">" + avatar(quem, true) +
     '<div class="row-main"><p class="row-name">' + esc(quem) + "</p>" +
-    '<p class="inline-note micro muted">' +
+    '<p class="inline-note micro ' + (atrasada ? "nota--atraso" : "muted") + '">' +
     icone(atrasada ? "alert-circle" : "package", "icon--sm " + (atrasada ? "icon--clay" : "icon--warn")) +
     esc(produto ? produto.nome : "Material do ateliê") +
     (c.quantidade > 1 ? " · " + c.quantidade + " un" : "") +
     " · " + (atrasada ? "levou em " + dataCurta(c.criada_em) : "levou hoje") + "</p></div>" +
-    '<div class="row-side">' + dinheiro(c.valor_centavos, atrasada ? "heading" : "muted") +
+    '<div class="row-side">' +
+    dinheiro(c.valor_centavos, atrasada ? "heading money--atraso" : "muted") +
     (comAcao ? botao("Receber", "neutral", "compra-receber", c.id, { sm: true }) : "") +
     "</div></li>"
   );
@@ -1275,10 +1278,10 @@ function telaFinanceiroProfessor() {
   const atrasadas = abertas.filter((m) => statusDe(m) === "atrasado" && !aguardando.includes(m));
   const aVencer = abertas.filter((m) => statusDe(m) === "aberto" && !aguardando.includes(m));
 
-  const bloco = (titulo, lista) =>
+  const bloco = (titulo, lista, alerta) =>
     lista.length
       ? '<section style="margin-bottom:24px"><div class="section-head"><h2 class="section-title">' + esc(titulo) +
-        '</h2><p class="micro muted">' + lista.length + "</p></div>" +
+        '</h2><p class="micro ' + (alerta ? "chip chip--atraso" : "muted") + '">' + lista.length + "</p></div>" +
         '<div class="card card--financeiro"><ul class="rows">' + lista.map((m) => linhaMensalidade(m, true)).join("") + "</ul></div></section>"
       : "";
 
@@ -1304,7 +1307,7 @@ function telaFinanceiroProfessor() {
     '<p class="micro muted" style="margin-top:12px">' + reais(vendido) +
     " vendido em material</p></div>" +
     bloco("Aguardando sua confirmação", aguardando) +
-    bloco("Em atraso", atrasadas) +
+    bloco("Em atraso", atrasadas, true) +
     bloco("A vencer", aVencer) +
     (material.length
       ? '<section style="margin-bottom:24px"><div class="section-head">' +

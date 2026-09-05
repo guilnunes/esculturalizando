@@ -584,6 +584,35 @@ ul {
   border-bottom: 0;
 }
 
+/* Atraso, nas telas do professor. O que já venceu não pode ter o mesmo peso do
+   que ainda vai vencer: o trilho puxa o olho ao correr a lista, o fundo separa a
+   linha do cartão em que ela está, e o valor deixa de ser um número entre
+   outros. As margens negativas comem o padding do cartão, para o trilho encostar
+   na borda sem desalinhar o conteúdo das outras linhas. */
+.rows > li.row--atraso {
+  margin: 0 -16px;
+  padding: 12px 16px 12px 13px;
+  border-left: 3px solid var(--clay);
+  background: var(--clay-wash);
+}
+
+.rows > li.row--atraso:first-child {
+  padding-top: 12px;
+}
+
+.rows > li.row--atraso:last-child {
+  padding-bottom: 12px;
+}
+
+.row--atraso .row-name {
+  font-weight: 500;
+}
+
+.money--atraso,
+.nota--atraso {
+  color: var(--clay);
+}
+
 .row-main {
   flex: 1;
   min-width: 0;
@@ -840,7 +869,9 @@ ul {
 
 .chip--atraso {
   background: var(--clay-wash);
+  border: 1px solid var(--clay-deep);
   color: var(--clay);
+  font-weight: 500;
 }
 
 .chip--ok {
